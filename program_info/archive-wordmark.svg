@@ -1,14 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1500" height="512" viewBox="0 0 1500 512">
-  <title>Archive Launcher</title>
-  <desc>A blue and violet voxel chest with a brass latch.</desc>
-  <path d="M256 53 447 157 256 270 65 157Z" fill="#a8d7ff"/>
-  <path d="M65 157 256 270V331L65 218Z" fill="#768cfa"/>
-  <path d="M447 157 256 270V331L447 218Z" fill="#6554cc"/>
-  <path d="M65 218 256 331 447 218V242L256 355 65 242Z" fill="#202340"/>
-  <path d="M65 242 256 355V477L65 366Z" fill="#5268c8"/>
-  <path d="M447 242 256 355V477L447 366Z" fill="#393788"/>
-  <path d="M142 228 188 255V324L142 297Z" fill="#ffd38f"/>
-  <path d="M156 270 174 281V300L156 289Z" fill="#925036"/>
-  <text x="550" y="247" font-family="Helvetica,Arial,sans-serif" font-size="110" font-weight="600" fill="#f0eff4">Archive</text>
-  <text x="556" y="333" font-family="Helvetica,Arial,sans-serif" font-size="56" letter-spacing="8" fill="#a8d7ff">LAUNCHER</text>
+  <title>Stellar Launcher</title>
+  <rect x="34" y="34" width="444" height="444" rx="103" fill="#101010"/>
+  <circle cx="256" cy="256" r="90" fill="#090909" stroke="#a1a1a1" stroke-width="8"/>
+  <ellipse cx="256" cy="256" rx="169" ry="55" transform="rotate(-24 256 256)" fill="none" stroke="#f1f1f1" stroke-width="19"/>
+  <path d="M166 256a90 90 0 0 1 180 0" fill="#090909" stroke="#a1a1a1" stroke-width="8"/>
+  <text x="570" y="290" font-family="Helvetica,Arial,sans-serif" font-size="155" font-weight="600" fill="#f1f1f1">Stellar</text>
 </svg>

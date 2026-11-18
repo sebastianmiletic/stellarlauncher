@@ -1583,6 +1583,7 @@ bool Application::launch(MinecraftInstance* instance,
         }
         connect(controller, &LaunchController::finished, this, &Application::controllerFinished);
         addRunningInstance();
+        emit preparingGame(instance->gameRoot(), controller);
         QMetaObject::invokeMethod(controller, &Task::start, Qt::QueuedConnection);
         return true;
     } else if (instance->isRunning()) {

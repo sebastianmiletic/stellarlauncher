@@ -41,6 +41,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QPointer>
 #include <QProcess>
 #include <QTimer>
 
@@ -229,6 +230,8 @@ class MainWindow : public QMainWindow {
     void updateStatusCenter();
     void setInstanceActionsEnabled(bool enabled);
     void launchFromWindow(MinecraftInstance* inst);
+    QTimer* watchGameLaunch(const QString& gameRoot);
+    void stopWatchingGameLaunch();
 
     void runModalTask(Task* task);
     void instanceFromInstanceTask(InstanceTask* task);
@@ -252,6 +255,7 @@ class MainWindow : public QMainWindow {
     unique_qobject_ptr<NewsChecker> m_newsChecker;
 
     MinecraftInstance* m_selectedInstance = nullptr;
+    QPointer<QTimer> m_launchWatcher;
     QString m_currentInstIcon;
 
     // managed by the application object

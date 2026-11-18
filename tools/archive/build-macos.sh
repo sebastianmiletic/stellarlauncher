@@ -15,6 +15,23 @@ cmake -S "$source_dir" -B "$workspace_dir/build" -G Ninja \
   -DLauncher_CURSEFORGE_API_KEY="${ARCHIVE_CURSEFORGE_API_KEY:-}"
 cmake --build "$workspace_dir/build" -j "${ARCHIVE_BUILD_JOBS:-6}"
 QT_QPA_PLATFORM=offscreen ctest --test-dir "$workspace_dir/build" --output-on-failure
-cmake --install "$workspace_dir/build"
-codesign --force --deep --sign - "$workspace_dir/dist/ArchiveLauncher.app"
-codesign --verify --deep --strict "$workspace_dir/dist/ArchiveLauncher.app"
+mkdir -p "$workspace_dir/dist"
+stage="$(mktemp -d "$workspace_dir/dist/.stellar-build.XXXXXX")"
+trap 'rm -rf "$stage"' EXIT
+cmake --install "$workspace_dir/build" --prefix "$stage"
+app="$stage/ArchiveLauncher.app"
+codesign --force --deep --sign - "$app"
+codesign --verify --deep --strict "$app"
+"$app/Contents/MacOS/ArchiveLauncher" --version
+
+stellar="$workspace_dir/dist/Stellar Launcher.app"
+previous="$stage/previous.app"
+if [[ -d "$stellar" ]]; then
+  mv "$stellar" "$previous"
+fi
+if ! mv "$app" "$stellar"; then
+  if [[ -d "$previous" ]]; then
+    mv "$previous" "$stellar"
+  fi
+  exit 1
+fi

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build Archive Look from original artwork using librsvg."""
+"""Build Stellar Look from original artwork using librsvg."""
 import json
 from pathlib import Path
 import random
@@ -10,7 +10,8 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 ROOT = Path(__file__).resolve().parents[2]
 GUI = "assets/minecraft/textures/gui/"
 MARK = (ROOT / "program_info/archive-mark.svg").read_text()
-CHEST = MARK[MARK.index("  <path"):MARK.index("</svg>")]
+MARK_ART = MARK[MARK.index("  <rect"):MARK.index("</svg>")]
+WALLPAPER = (ROOT / "program_info/stellar-wallpaper.svg").read_text()
 
 
 def rasterize(svg):
@@ -37,10 +38,10 @@ def panorama():
     for face in range(6):
         stars = "".join(
             f'<rect x="{rng.randrange(8, 248)}" y="{rng.randrange(8, 248)}" '
-            f'width="1" height="1" fill="#b9c5f0" opacity="{rng.uniform(.17, .65):.2f}"/>'
+            f'width="1" height="1" fill="#c9c9c9" opacity="{rng.uniform(.17, .65):.2f}"/>'
             for _ in range(48)
         )
-        yield face, rasterize(svg(256, 256, '<rect width="256" height="256" fill="#191d32"/>' + stars))
+        yield face, rasterize(svg(256, 256, '<rect width="256" height="256" fill="#101010"/>' + stars))
 
 
 def build():
@@ -52,31 +53,34 @@ def build():
 
         write("pack.mcmeta", json.dumps({
             "pack": {
-                "description": "Archive Launcher · Midnight Blue",
+                "description": "Stellar Launcher · Event Horizon",
                 "min_format": [69, 0],
                 "max_format": [97, 1],
             },
         }, ensure_ascii=False))
         write("pack.png", rasterize(MARK.replace('width="512" height="512"', 'width="128" height="128"')))
-        write("assets/minecraft/texts/splashes.txt", "Make something worth keeping!\n")
+        write("assets/minecraft/texts/splashes.txt", "")
 
         title = (
-            f'<g transform="translate(64 8) scale(.31)">{CHEST}</g>'
-            + svg_text(256, 151, 139, "#373d78", "ARCHIVE")
-            + svg_text(256, 140, 139, "#dbeaff", "ARCHIVE")
+            f'<g transform="translate(64 8) scale(.31)">{MARK_ART}</g>'
+            + svg_text(256, 151, 139, "#4b4b4b", "STELLAR")
+            + svg_text(256, 140, 139, "#f1f1f1", "STELLAR")
         )
         title_image = rasterize(svg(1024, 256, title))
         for name in ("minecraft", "minceraft"):
             write(f"{GUI}title/{name}.png", title_image)
-        write(f"{GUI}title/edition.png", rasterize(svg(512, 64, svg_text(57, 45, 32, "#bcccf0", "MINECRAFT JAVA EDITION"))))
+        write(f"{GUI}title/edition.png", rasterize(svg(512, 64, svg_text(57, 45, 32, "#cdcdcd", "MINECRAFT JAVA EDITION"))))
 
         for face, image in panorama():
             write(f"{GUI}title/background/panorama_{face}.png", image)
+        # The game's screen-space panorama overlay keeps the black hole in frame.
+        overlay = WALLPAPER.replace('width="1024" height="560"', 'width="512" height="280"')
+        write(f"{GUI}title/background/panorama_overlay.png", rasterize(overlay))
 
         for name, fill, border in (
-            ("button", "#2b3151", "#58678f"),
-            ("button_highlighted", "#474981", "#aabfff"),
-            ("button_disabled", "#282b3c", "#40455c"),
+            ("button", "#222222", "#626262"),
+            ("button_highlighted", "#3d3d3d", "#ededed"),
+            ("button_disabled", "#181818", "#414141"),
         ):
             sprite = svg(
                 200, 20,

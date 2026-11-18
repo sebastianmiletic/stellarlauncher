@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a Sparkle release archive and appcast using Archive's login-keychain key."""
+"""Build a Sparkle release archive and appcast using Stellar’s login-keychain key."""
 
 import argparse
 from datetime import datetime, timezone
@@ -32,12 +32,12 @@ def main():
         [args.sparkle_bin / "generate_keys", "--account", "archivelauncher", "-p"], text=True
     ).strip()
     if info.get("SUPublicEDKey") != public_key or not info.get("SUFeedURL"):
-        parser.error("Build the app with the Archive signing public key and update feed first.")
+        parser.error("Build the app with the Stellar signing public key and update feed first.")
     subprocess.run(["codesign", "--verify", "--deep", "--strict", app], check=True)
 
     args.output.mkdir(parents=True, exist_ok=True)
     version = info["CFBundleShortVersionString"]
-    archive = args.output / f"ArchiveLauncher-{version}-macOS-arm64.zip"
+    archive = args.output / f"StellarLauncher-{version}-macOS-arm64.zip"
     if archive.exists() or (args.output / "appcast.xml").exists():
         parser.error("Use an empty output directory for this release.")
     subprocess.run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", app, archive], check=True)
@@ -47,9 +47,9 @@ def main():
 
     rss = ET.Element("rss", version="2.0")
     channel = ET.SubElement(rss, "channel")
-    ET.SubElement(channel, "title").text = "Archive Launcher updates"
+    ET.SubElement(channel, "title").text = "Stellar Launcher updates"
     item = ET.SubElement(channel, "item")
-    ET.SubElement(item, "title").text = f"Archive Launcher {version}"
+    ET.SubElement(item, "title").text = f"Stellar Launcher {version}"
     ET.SubElement(item, f"{{{SPARKLE}}}version").text = info["CFBundleVersion"]
     ET.SubElement(item, f"{{{SPARKLE}}}shortVersionString").text = version
     ET.SubElement(item, "pubDate").text = format_datetime(datetime.now(timezone.utc))

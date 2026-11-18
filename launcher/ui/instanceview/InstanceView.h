@@ -39,6 +39,7 @@
 #include <QLineEdit>
 #include <QListView>
 #include <QScrollBar>
+#include <QVariantAnimation>
 #include <functional>
 #include "VisualGroup.h"
 #include "ui/themes/CatPainter.h"
@@ -79,6 +80,7 @@ class InstanceView : public QAbstractItemView {
 
     int spacing() const { return m_spacing; };
     void setPaintCat(bool visible);
+    void setLaunchWallpaperVisible(bool visible);
 
    public slots:
     virtual void updateGeometries() override;
@@ -130,12 +132,14 @@ class InstanceView : public QAbstractItemView {
     int m_currentCursorColumn = -1;
     mutable QCache<int, QRect> m_geometryCache;
     CatPainter* m_cat = nullptr;
+    QVariantAnimation m_wallpaperReveal;
+    bool m_launching = false;
 
     // point where the currently active mouse action started in geometry coordinates
     QPoint m_pressedPosition;
     QPersistentModelIndex m_pressedIndex;
-    bool m_pressedAlreadySelected;
-    VisualGroup* m_pressedCategory;
+    bool m_pressedAlreadySelected = false;
+    VisualGroup* m_pressedCategory = nullptr;
     QItemSelectionModel::SelectionFlag m_ctrlDragSelectionFlag;
     QPoint m_lastDragPosition;
 

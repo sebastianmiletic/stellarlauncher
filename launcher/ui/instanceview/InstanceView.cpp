@@ -62,6 +62,7 @@ InstanceView::InstanceView(QWidget* parent) : QAbstractItemView(parent)
     setAcceptDrops(true);
     setAutoScroll(true);
     setPaintCat(APPLICATION->settings()->get("TheCat").toBool());
+    connect(&m_wallpaperReveal, &QVariantAnimation::valueChanged, viewport(), QOverload<>::of(&QWidget::update));
     connect(verticalScrollBar(), &QScrollBar::valueChanged, viewport(), QOverload<>::of(&QWidget::update));
     connect(horizontalScrollBar(), &QScrollBar::valueChanged, viewport(), QOverload<>::of(&QWidget::update));
 }
@@ -262,6 +263,10 @@ int InstanceView::itemWidth() const
 
 void InstanceView::mousePressEvent(QMouseEvent* event)
 {
+    if (event->button() != Qt::LeftButton) {
+        event->ignore();
+        return;
+    }
     executeDelayedItemsLayout();
 
     QPoint visualPos = event->pos();
@@ -355,6 +360,10 @@ void InstanceView::mouseMoveEvent(QMouseEvent* event)
 
 void InstanceView::mouseReleaseEvent(QMouseEvent* event)
 {
+    if (event->button() != Qt::LeftButton) {
+        event->ignore();
+        return;
+    }
     executeDelayedItemsLayout();
 
     QPoint visualPos = event->pos();
@@ -409,6 +418,10 @@ void InstanceView::mouseReleaseEvent(QMouseEvent* event)
 
 void InstanceView::mouseDoubleClickEvent(QMouseEvent* event)
 {
+    if (event->button() != Qt::LeftButton) {
+        event->ignore();
+        return;
+    }
     executeDelayedItemsLayout();
 
     QModelIndex index = indexAt(event->pos());
@@ -442,14 +455,46 @@ void InstanceView::setPaintCat(bool visible)
     }
 }
 
+void InstanceView::setLaunchWallpaperVisible(bool visible)
+{
+    if (m_launching == visible) {
+        return;
+    }
+    m_launching = visible;
+    const auto previous = m_wallpaperReveal.currentValue().toReal();
+    m_wallpaperReveal.stop();
+    m_wallpaperReveal.setStartValue(previous);
+    m_wallpaperReveal.setEndValue(visible ? 1.0 : 0.0);
+    m_wallpaperReveal.setDuration(visible ? 3600 : 350);
+    m_wallpaperReveal.setEasingCurve(visible ? QEasingCurve::OutCubic : QEasingCurve::InOutQuad);
+    m_wallpaperReveal.start();
+}
+
 void InstanceView::paintEvent([[maybe_unused]] QPaintEvent* event)
 {
     executeDelayedItemsLayout();
 
     QPainter painter(this->viewport());
 
-    if (m_cat) {
-        m_cat->paint(&painter, this->viewport()->rect());
+    const auto bounds = viewport()->rect();
+    const auto reveal = m_wallpaperReveal.currentValue().toReal();
+    if (reveal > 0 || model()->rowCount() == 0) {
+        static const QIcon wallpaper(QStringLiteral(":/stellar-wallpaper.svg"));
+        const auto size = QSize(1024, 560).scaled(bounds.size(), Qt::KeepAspectRatioByExpanding);
+        const QRect art(QPoint((bounds.width() - size.width()) / 2, (bounds.height() - size.height()) / 2), size);
+        painter.save();
+        if (reveal > 0) {
+            const auto height = qRound(bounds.height() * reveal);
+            painter.setClipRect(0, bounds.height() - height, bounds.width(), height);
+            painter.setOpacity(0.8);
+        } else {
+            painter.setOpacity(0.36);
+        }
+        wallpaper.paint(&painter, art);
+        painter.restore();
+    }
+    if (m_cat && reveal <= 0) {
+        m_cat->paint(&painter, bounds);
     }
 
     QStyleOptionViewItem option;
@@ -458,14 +503,7 @@ void InstanceView::paintEvent([[maybe_unused]] QPaintEvent* event)
 
     if (model()->rowCount() == 0) {
         painter.save();
-        const auto bounds = viewport()->rect();
         const int centerY = bounds.center().y();
-        static const QIcon landscape(QStringLiteral(":/archive-landscape.svg"));
-        const int artHeight = qMin(80, bounds.height() / 4);
-        const QRect art(bounds.left(), bounds.bottom() - artHeight + 1, bounds.width(), artHeight);
-        if (artHeight > 0) {
-            landscape.paint(&painter, art, Qt::AlignHCenter | Qt::AlignBottom);
-        }
         painter.drawPixmap(bounds.center().x() - 32, centerY - 92, APPLICATION->logo().pixmap(64, 64));
         auto titleFont = font();
         titleFont.setPointSize(16);

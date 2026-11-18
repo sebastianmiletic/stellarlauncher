@@ -46,6 +46,9 @@
 #include "ui_MainWindow.h"
 
 #include <QDir>
+#include <QContextMenuEvent>
+#include <QElapsedTimer>
+#include <QFile>
 #include <QFileInfo>
 #include <QUrl>
 #include <QUrlQuery>
@@ -162,23 +165,23 @@ QIcon accountIcon(const MinecraftAccount* account = nullptr)
     }
     return steve;
 }
-void installArchiveLook(QWidget* parent, const QDir& game)
+void installStellarLook(QWidget* parent, const QDir& game)
 {
-    const auto target = game.filePath("resourcepacks/Archive Look.zip");
+    const auto target = game.filePath("resourcepacks/Stellar Look.zip");
     const auto pack = FS::read(":/archive-look.zip");
     if (!pack) {
-        QMessageBox::warning(parent, QObject::tr("Could not install Archive Look"), pack.error());
+        QMessageBox::warning(parent, QObject::tr("Could not install Stellar Look"), pack.error());
         return;
     }
     if (!QFileInfo::exists(target)) {
         const auto result = FS::write(target, *pack);
         if (!result) {
-            QMessageBox::warning(parent, QObject::tr("Could not install Archive Look"), result.error());
+            QMessageBox::warning(parent, QObject::tr("Could not install Stellar Look"), result.error());
             return;
         }
     }
-    QMessageBox::information(parent, QObject::tr("Archive Look is ready"),
-                             QObject::tr("In Minecraft Java 1.21.9 through 26.3, open Options → Resource Packs and enable Archive Look."));
+    QMessageBox::information(parent, QObject::tr("Stellar Look is ready"),
+                             QObject::tr("In Minecraft Java 1.21.9 through 26.3, open Options → Resource Packs and enable Stellar Look."));
 }
 
 #ifdef Q_OS_MACOS
@@ -215,7 +218,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     brandLayout->setContentsMargins(8, 2, 8, 2);
     auto* brandIcon = new QLabel(brand);
     brandIcon->setPixmap(APPLICATION->logo().pixmap(24, 24));
-    auto* brandName = new QLabel(tr("Archive"), brand);
+    auto* brandName = new QLabel(tr("Stellar"), brand);
     brandName->setObjectName("archiveWordmark");
     brandLayout->addWidget(brandIcon);
     brandLayout->addWidget(brandName);
@@ -307,11 +310,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         roots.append(settings.value("AdditionalInstanceDirs").toStringList());
         QSet<QString> ids;
         auto* worldsMenu = new QMenu(tr("Open a saved world"), prismMenu);
-        auto* looksMenu = new QMenu(tr("Install Archive Look"), prismMenu);
-        const auto launch = [this, executable, data](QStringList args) {
+        auto* looksMenu = new QMenu(tr("Install Stellar Look"), prismMenu);
+        const auto launch = [this, executable, data](const QDir& game, QStringList args) {
             args.prepend(data.absolutePath());
             args.prepend("--dir");
+            watchGameLaunch(game.absolutePath());
             if (!QProcess::startDetached(executable, args)) {
+                stopWatchingGameLaunch();
                 QMessageBox::warning(this, tr("Could not start Prism Launcher"), tr("Open Prism Launcher and try launching the instance there."));
             }
         };
@@ -331,16 +336,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
                 }
                 ids.insert(id);
                 QString name = instance.value("name", id).toString();
-                auto* action = prismMenu->addAction(name);
-                action->setToolTip(tr("Launch %1 in Prism using its selected account").arg(id));
-                connect(action, &QAction::triggered, this, [launch, id] { launch({ "--launch", id }); });
-
                 const QDir instanceDir(entry.absoluteFilePath());
                 const auto minecraft = instanceDir.filePath("minecraft");
                 const auto dotMinecraft = instanceDir.filePath(".minecraft");
                 const QDir game(!QFileInfo::exists(minecraft) && QFileInfo(dotMinecraft).isDir() ? dotMinecraft : minecraft);
+                auto* action = prismMenu->addAction(name);
+                action->setToolTip(tr("Launch %1 in Prism using its selected account").arg(id));
+                connect(action, &QAction::triggered, this, [launch, game, id] { launch(game, { "--launch", id }); });
+
                 auto* look = looksMenu->addAction(name);
-                connect(look, &QAction::triggered, this, [this, game] { installArchiveLook(this, game); });
+                connect(look, &QAction::triggered, this, [this, game] { installStellarLook(this, game); });
 
                 const QDir saves(game.filePath("saves"));
                 QMenu* instanceWorlds = nullptr;
@@ -353,7 +358,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
                     }
                     const auto folder = world.fileName();
                     auto* playWorld = instanceWorlds->addAction(folder);
-                    connect(playWorld, &QAction::triggered, this, [launch, id, folder] { launch({ "--launch", id, "--world", folder }); });
+                    connect(playWorld, &QAction::triggered, this, [launch, game, id, folder] { launch(game, { "--launch", id, "--world", folder }); });
                 }
             }
         }
@@ -369,7 +374,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
             looksMenu->addAction(tr("No Prism instances found"))->setEnabled(false);
         }
         prismMenu->addMenu(looksMenu);
-        auto* importPrism = prismMenu->addAction(tr("Import selected Archive instance into Prism…"));
+        auto* importPrism = prismMenu->addAction(tr("Import selected Stellar instance into Prism…"));
         importPrism->setEnabled(m_selectedInstance && !m_selectedInstance->isRunning());
         connect(importPrism, &QAction::triggered, this, [this, executable, data] {
             if (!m_selectedInstance || m_selectedInstance->isRunning()) {
@@ -398,12 +403,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     });
 #endif
 
-    auto* archiveLook = new QAction(tr("Install Archive Look for selected instance"), ui->fileMenu);
+    auto* archiveLook = new QAction(tr("Install Stellar Look for selected instance"), ui->fileMenu);
     ui->fileMenu->insertAction(ui->actionKillInstance, archiveLook);
     connect(ui->fileMenu, &QMenu::aboutToShow, this, [this, archiveLook] { archiveLook->setEnabled(m_selectedInstance != nullptr); });
     connect(archiveLook, &QAction::triggered, this, [this] {
         if (m_selectedInstance) {
-            installArchiveLook(this, QDir(m_selectedInstance->gameRoot()));
+            installStellarLook(this, QDir(m_selectedInstance->gameRoot()));
         }
     });
 
@@ -497,6 +502,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         connect(delegate, &ListViewDelegate::textChanged, this, &MainWindow::handleInstanceRename);
 
         view->installEventFilter(this);
+        view->viewport()->installEventFilter(this);
         view->setContextMenuPolicy(Qt::CustomContextMenu);
         connect(view, &QWidget::customContextMenuRequested, this, &MainWindow::showInstanceContextMenu);
         connect(view, &InstanceView::droppedURLs, this, &MainWindow::processURLs, Qt::QueuedConnection);
@@ -518,6 +524,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         layout->addWidget(view, 1);
         ui->horizontalLayout->addWidget(page);
     }
+    connect(APPLICATION, &Application::preparingGame, this, [this](const QString& gameRoot, Task* controller) {
+        auto* watcher = watchGameLaunch(gameRoot);
+        connect(controller, &Task::finished, watcher, [this, watcher] {
+            if (m_launchWatcher == watcher) {
+                stopWatchingGameLaunch();
+            }
+        });
+    });
     // The cat background
     {
         updateCatState();
@@ -660,6 +674,9 @@ MainWindow::~MainWindow() {}
 QMenu* MainWindow::createPopupMenu()
 {
     QMenu* filteredMenu = QMainWindow::createPopupMenu();
+    if (!filteredMenu) {
+        return nullptr;
+    }
     filteredMenu->removeAction(ui->mainToolBar->toggleViewAction());
 
     filteredMenu->addAction(ui->actionToggleStatusBar);
@@ -705,25 +722,28 @@ void MainWindow::konamiTriggered()
 
 void MainWindow::showInstanceContextMenu(const QPoint& pos)
 {
+    const auto index = view->indexAt(pos);
+    if (index.isValid()) {
+        view->selectionModel()->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect);
+        if (!m_selectedInstance) {
+            return;
+        }
+    }
+
     auto* menu = new QMenu(this);
-    menu->setAttribute(Qt::WA_DeleteOnClose);
+    connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
     QList<QAction*> actions;
 
-    auto* actionSep = new QAction("", menu);
+    auto* actionSep = new QAction(menu);
     actionSep->setSeparator(true);
 
-    bool onInstance = view->indexAt(pos).isValid();
-    if (onInstance) {
-        // reuse the file menu actions
-        actions = ui->fileMenu->actions();
-
-        // remove the add instance action, launcher settings action and close action
-        actions.removeFirst();
-        actions.removeLast();
-        actions.removeLast();
-
-        actions.prepend(ui->actionChangeInstIcon);
-        actions.prepend(ui->actionRenameInstance);
+    if (index.isValid()) {
+        actions = {
+            ui->actionLaunchInstance, ui->actionKillInstance, ui->actionEditInstance,
+            ui->actionRenameInstance, ui->actionChangeInstIcon, ui->actionChangeInstGroup,
+            ui->actionViewSelectedInstFolder, ui->actionExportInstance, ui->actionCopyInstance,
+            ui->actionCreateInstanceShortcut, ui->actionDeleteInstance,
+        };
 
         // add header
         actions.prepend(actionSep);
@@ -758,7 +778,7 @@ void MainWindow::showInstanceContextMenu(const QPoint& pos)
             connect(actionRenameGroup, &QAction::triggered, this, [this, group] { renameGroup(group); });
             actions.append(actionRenameGroup);
 
-            QAction* actionChangeGroupIcon = new QAction(tr("Change group &icon"), this);
+            QAction* actionChangeGroupIcon = new QAction(tr("Change group &icon"), menu);
             connect(actionChangeGroupIcon, &QAction::triggered, this, [this, group] { setGroupIcon(group); });
             actions.append(actionChangeGroupIcon);
 
@@ -894,7 +914,7 @@ void MainWindow::repopulateAccountsMenu()
     connect(addAccount, &QAction::triggered, this, [this] {
         if (!APPLICATION->capabilities().testFlag(Application::SupportsMSA)) {
             QMessageBox::information(this, tr("Set up Microsoft sign-in"),
-                                     tr("Enter Archive Launcher’s Microsoft application ID in Services to enable sign-in."));
+                                     tr("Enter Stellar Launcher’s Microsoft application ID in Services to enable sign-in."));
             APPLICATION->ShowGlobalSettings(this, "apis");
             return;
         }
@@ -958,6 +978,13 @@ void MainWindow::defaultAccountChanged()
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* ev)
 {
+    if (view && (obj == view || obj == view->viewport()) && ev->type() == QEvent::ContextMenu) {
+        auto* context = static_cast<QContextMenuEvent*>(ev);
+        if (context->reason() == QContextMenuEvent::Keyboard && view->currentIndex().isValid()) {
+            showInstanceContextMenu(view->visualRect(view->currentIndex()).center());
+            return true;
+        }
+    }
     if (obj == view) {
         if (ev->type() == QEvent::KeyPress) {
             secretEventFilter->input(ev);
@@ -1840,6 +1867,64 @@ void MainWindow::instanceActivated(QModelIndex index)
     launchFromWindow(inst);
 }
 
+QTimer* MainWindow::watchGameLaunch(const QString& gameRoot)
+{
+    if (m_launchWatcher) {
+        m_launchWatcher->stop();
+        m_launchWatcher->deleteLater();
+    }
+    auto* watcher = new QTimer(this);
+    watcher->setInterval(300);
+    m_launchWatcher = watcher;
+    view->setLaunchWallpaperVisible(true);
+
+    const auto logPath = QDir(gameRoot).filePath("logs/latest.log");
+    QFile original(logPath);
+    const auto originalStart = original.open(QIODevice::ReadOnly) ? original.read(192) : QByteArray();
+    const auto originalSize = original.isOpen() ? original.size() : 0;
+    QElapsedTimer elapsed;
+    elapsed.start();
+    connect(watcher, &QTimer::timeout, this, [this, watcher, logPath, originalStart, originalSize, elapsed,
+                                             gameLogStarted = QElapsedTimer()]() mutable {
+        if (m_launchWatcher != watcher) {
+            return;
+        }
+        QFile log(logPath);
+        if (log.open(QIODevice::ReadOnly)) {
+            const auto size = log.size();
+            const bool sameFile = !originalStart.isEmpty() && log.read(originalStart.size()) == originalStart;
+            const auto start = sameFile && size >= originalSize ? originalSize : 0;
+            if (size > start) {
+                if (!gameLogStarted.isValid()) {
+                    gameLogStarted.start();
+                }
+                log.seek(qMax(start, size - 65536));
+                const auto output = log.read(65536);
+                if (output.contains("gui.png-atlas") || output.contains("Preparing spawn area") ||
+                    output.contains("Stopping!") || gameLogStarted.hasExpired(20000)) {
+                    stopWatchingGameLaunch();
+                    return;
+                }
+            }
+        }
+        if (elapsed.hasExpired(120000)) {
+            stopWatchingGameLaunch();
+        }
+    });
+    watcher->start();
+    return watcher;
+}
+
+void MainWindow::stopWatchingGameLaunch()
+{
+    if (m_launchWatcher) {
+        m_launchWatcher->stop();
+        m_launchWatcher->deleteLater();
+        m_launchWatcher = nullptr;
+    }
+    view->setLaunchWallpaperVisible(false);
+}
+
 void MainWindow::launchFromWindow(MinecraftInstance* inst)
 {
 #ifdef Q_OS_MACOS
@@ -1854,10 +1939,10 @@ void MainWindow::launchFromWindow(MinecraftInstance* inst)
     const auto executable = prismExecutable();
     if (!ownsJava && !executable.isEmpty()) {
         QMessageBox choice(QMessageBox::Question, tr("Play Minecraft: Java Edition"),
-                           tr("Use your signed-in Prism account to play the full game. Choose an instance in Prism, or use File → Play with Prism to import the selected Archive instance and open saved worlds."),
+                           tr("Use your signed-in Prism account to play the full game. Choose an instance in Prism, or use File → Play with Prism to import the selected Stellar instance and open saved worlds."),
                            QMessageBox::Cancel, this);
         auto* playWithPrism = choice.addButton(tr("Open Prism Launcher"), QMessageBox::AcceptRole);
-        auto* otherOptions = choice.addButton(tr("Archive launch options…"), QMessageBox::ActionRole);
+        auto* otherOptions = choice.addButton(tr("Stellar launch options…"), QMessageBox::ActionRole);
         choice.exec();
         if (choice.clickedButton() == playWithPrism) {
             if (!QProcess::startDetached(executable, { "--dir", prismDataPath(), "--show-window" })) {

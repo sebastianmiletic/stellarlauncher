@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="560" viewBox="0 0 1024 560">
+  <defs>
+    <radialGradient id="sky" cx="64%" cy="55%" r="64%">
+      <stop stop-color="#252525"/><stop offset=".63" stop-color="#131313"/><stop offset="1" stop-color="#090909"/>
+    </radialGradient>
+    <radialGradient id="halo">
+      <stop offset=".47" stop-color="#b5b5b5" stop-opacity="0"/><stop offset=".59" stop-color="#c9c9c9" stop-opacity=".36"/>
+      <stop offset=".72" stop-color="#979797" stop-opacity=".16"/><stop offset="1" stop-color="#a3a3a3" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="disk" x1="0" x2="1" y1=".15" y2=".8">
+      <stop stop-color="#727272" stop-opacity="0"/><stop offset=".35" stop-color="#bbbbbb"/>
+      <stop offset=".7" stop-color="#f0f0f0"/><stop offset="1" stop-color="#909090" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#sky)" d="M0 0h1024v560H0z"/>
+  <g fill="#d9d9d9">
+    <path opacity=".45" d="M44 327h2v2h-2zM181 96h2v2h-2zM119 457h2v2h-2zM879 171h2v2h-2zM914 399h2v2h-2zM680 94h2v2h-2zM391 412h2v2h-2zM763 459h2v2h-2z"/>
+    <path opacity=".24" d="M82 208h1v1h-1zM290 163h1v1h-1zM344 81h1v1h-1zM456 143h1v1h-1zM246 400h1v1h-1zM825 105h1v1h-1zM945 234h1v1h-1zM984 466h1v1h-1zM489 507h1v1h-1z"/>
+  </g>
+  <g transform="translate(640 294)">
+    <circle r="203" fill="url(#halo)"/>
+    <circle r="111" fill="#090909" stroke="#777777" stroke-width="1.5"/>
+    <g transform="rotate(-14)" fill="none" stroke="url(#disk)">
+      <ellipse rx="330" ry="61" stroke-width="1" opacity=".25"/>
+      <ellipse rx="297" ry="52" stroke-width="2" opacity=".36"/>
+      <ellipse rx="266" ry="46" stroke-width="16" opacity=".14"/>
+      <ellipse rx="252" ry="40" stroke-width="6" opacity=".58"/>
+      <ellipse rx="228" ry="33" stroke-width="2.5"/>
+      <ellipse rx="187" ry="28" stroke-width="1" opacity=".8"/>
+    </g>
+    <path d="M-111 0a111 111 0 0 1 222 0" fill="#090909" stroke="#a4a4a4" stroke-width="2"/>
+  </g>
+</svg>

@@ -52,6 +52,7 @@
 #include "minecraft/auth/MinecraftAccount.h"
 
 class LaunchController;
+class Task;
 class LocalPeer;
 class InstanceWindow;
 class MainWindow;
@@ -199,6 +200,7 @@ class Application : public QApplication {
 
    signals:
     void updateAllowedChanged(bool status);
+    void preparingGame(const QString& gameRoot, Task* controller);
     void globalSettingsAboutToOpen();
     void globalSettingsApplied();
     int currentCatChanged(int index);

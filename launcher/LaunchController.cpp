@@ -42,6 +42,7 @@
 
 #include "net/NetUtils.h"
 #include "ui/InstanceWindow.h"
+#include "ui/MainWindow.h"
 #include "ui/dialogs/CustomMessageBox.h"
 #include "ui/dialogs/MSALoginDialog.h"
 #include "ui/dialogs/ProfileSelectDialog.h"
@@ -480,6 +481,10 @@ void LaunchController::onFailed(QString reason)
 
 void LaunchController::onProgressRequested(Task* task) const
 {
+    if (qobject_cast<MainWindow*>(m_parentWidget) && m_parentWidget->isVisible()) {
+        m_launcher->proceed();
+        return;
+    }
     ProgressDialog progDialog(m_parentWidget);
     progDialog.showSkipButton();
     m_launcher->proceed();
