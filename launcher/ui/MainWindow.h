@@ -252,9 +252,6 @@ class MainWindow : public QMainWindow {
     unique_qobject_ptr<NewsChecker> m_newsChecker;
 
     MinecraftInstance* m_selectedInstance = nullptr;
-#ifdef Q_OS_MACOS
-    QMenu* m_prismMenu = nullptr;
-#endif
     QString m_currentInstIcon;
 
     // managed by the application object

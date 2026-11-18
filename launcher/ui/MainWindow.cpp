@@ -181,6 +181,26 @@ void installArchiveLook(QWidget* parent, const QDir& game)
                              QObject::tr("In Minecraft Java 1.21.9 through 26.3, open Options → Resource Packs and enable Archive Look."));
 }
 
+#ifdef Q_OS_MACOS
+QString prismExecutable()
+{
+    const auto bundle = QStringLiteral("Prism Launcher.app/Contents/MacOS/prismlauncher");
+    const auto systemBinary = "/Applications/" + bundle;
+    const auto userBinary = QDir::home().filePath("Applications/" + bundle);
+    for (const auto& path : { systemBinary, userBinary }) {
+        const QFileInfo file(path);
+        if (file.isFile() && file.isExecutable()) {
+            return path;
+        }
+    }
+    return {};
+}
+
+QString prismDataPath()
+{
+    return QDir::home().filePath("Library/Application Support/PrismLauncher");
+}
+#endif
 }  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWindow)
@@ -269,22 +289,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     }
 
 #ifdef Q_OS_MACOS
-    m_prismMenu = new QMenu(tr("Play with Prism"), ui->fileMenu);
-    auto* prismMenu = m_prismMenu;
+    auto* prismMenu = new QMenu(tr("Play with Prism"), ui->fileMenu);
     ui->fileMenu->insertMenu(ui->actionKillInstance, prismMenu);
     connect(prismMenu, &QMenu::aboutToShow, this, [this, prismMenu] {
         qDeleteAll(prismMenu->findChildren<QMenu*>(QString(), Qt::FindDirectChildrenOnly));
         prismMenu->clear();
-        const QDir data(QDir::home().filePath("Library/Application Support/PrismLauncher"));
-        const auto bundle = QStringLiteral("Prism Launcher.app/Contents/MacOS/prismlauncher");
-        const QString systemBinary = "/Applications/" + bundle;
-        const QString userBinary = QDir::home().filePath("Applications/" + bundle);
-        const auto isExecutable = [](const QString& path) {
-            const QFileInfo file(path);
-            return file.isFile() && file.isExecutable();
-        };
-        const QString executable = isExecutable(systemBinary) ? systemBinary : userBinary;
-        if (!isExecutable(executable)) {
+        const QDir data(prismDataPath());
+        const auto executable = prismExecutable();
+        if (executable.isEmpty()) {
             prismMenu->addAction(tr("Prism Launcher is not installed"))->setEnabled(false);
             return;
         }
@@ -1839,15 +1851,18 @@ void MainWindow::launchFromWindow(MinecraftInstance* inst)
             break;
         }
     }
-    if (!ownsJava && m_prismMenu) {
+    const auto executable = prismExecutable();
+    if (!ownsJava && !executable.isEmpty()) {
         QMessageBox choice(QMessageBox::Question, tr("Play Minecraft: Java Edition"),
-                           tr("Use your signed-in Prism Launcher account to play the full game. Pick an installed Prism instance, or import a copy of the selected Archive instance."),
+                           tr("Use your signed-in Prism account to play the full game. Choose an instance in Prism, or use File → Play with Prism to import the selected Archive instance and open saved worlds."),
                            QMessageBox::Cancel, this);
-        auto* playWithPrism = choice.addButton(tr("Play with Prism"), QMessageBox::AcceptRole);
+        auto* playWithPrism = choice.addButton(tr("Open Prism Launcher"), QMessageBox::AcceptRole);
         auto* otherOptions = choice.addButton(tr("Archive launch options…"), QMessageBox::ActionRole);
         choice.exec();
         if (choice.clickedButton() == playWithPrism) {
-            m_prismMenu->exec(mapToGlobal(QPoint(20, ui->mainToolBar->geometry().bottom())));
+            if (!QProcess::startDetached(executable, { "--dir", prismDataPath(), "--show-window" })) {
+                QMessageBox::warning(this, tr("Could not start Prism Launcher"), tr("Open Prism Launcher from Applications."));
+            }
             return;
         }
         if (choice.clickedButton() != otherOptions) {
