@@ -1,0 +1,8 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/">
+        <file>@Launcher_AppID@.svg</file>
+        <file>archive-account.svg</file>
+        <file>archive-landscape.svg</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,20 @@
+#!/bin/bash
+set -euo pipefail
+source_dir="$(cd "$(dirname "$0")/../.." && pwd)"
+workspace_dir="$(dirname "$source_dir")"
+export PKG_CONFIG_PATH="/opt/homebrew/opt/libarchive/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+cmake -S "$source_dir" -B "$workspace_dir/build" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DENABLE_LTO=ON -DLauncher_USE_PCH=OFF \
+  -DCMAKE_PREFIX_PATH=/opt/homebrew -DCMAKE_INSTALL_PREFIX="$workspace_dir/dist" \
+  -DLauncher_BUILD_PLATFORM=archive-macos-arm64 -DBUILD_TESTING=ON \
+  -DJava_JAVA_EXECUTABLE=/opt/homebrew/opt/openjdk@17/bin/java \
+  -DJava_JAVAC_EXECUTABLE=/opt/homebrew/opt/openjdk@17/bin/javac \
+  -DMACOSX_SPARKLE_UPDATE_FEED_URL="${ARCHIVE_UPDATE_FEED_URL-https://github.com/sebastianmiletic/archivelauncher/releases/latest/download/appcast.xml}" \
+  -DMACOSX_SPARKLE_UPDATE_PUBLIC_KEY="${ARCHIVE_UPDATE_PUBLIC_KEY-PqH556NKaC1/iq5om4zBz/2NQ0/WsiMfVi+1wHgdbTo=}" \
+  -DLauncher_MSA_CLIENT_ID="${ARCHIVE_MSA_CLIENT_ID:-}" \
+  -DLauncher_CURSEFORGE_API_KEY="${ARCHIVE_CURSEFORGE_API_KEY:-}"
+cmake --build "$workspace_dir/build" -j "${ARCHIVE_BUILD_JOBS:-6}"
+QT_QPA_PLATFORM=offscreen ctest --test-dir "$workspace_dir/build" --output-on-failure
+cmake --install "$workspace_dir/build"
+codesign --force --deep --sign - "$workspace_dir/dist/ArchiveLauncher.app"
+codesign --verify --deep --strict "$workspace_dir/dist/ArchiveLauncher.app"

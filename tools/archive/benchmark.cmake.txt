@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.25)
+project(ArchiveAssetsBenchmark LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+find_package(Qt6 REQUIRED COMPONENTS Core)
+add_executable(benchmark-assets benchmark-assets.cpp)
+target_link_libraries(benchmark-assets Qt6::Core)
