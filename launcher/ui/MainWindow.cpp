@@ -59,6 +59,8 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QInputDialog>
+#include <QProcess>
+#include "settings/INIFile.h"
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMainWindow>
@@ -236,6 +238,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     {
         auto accountMenuButton = dynamic_cast<QToolButton*>(ui->mainToolBar->widgetForAction(ui->actionAccountsButton));
         accountMenuButton->setPopupMode(QToolButton::InstantPopup);
+        accountMenuButton->setObjectName("archiveAccountsButton");
+        accountMenuButton->setIconSize(QSize(32, 32));
 
         auto exportInstanceMenu = new QMenu(this);
         exportInstanceMenu->addAction(ui->actionExportInstanceZip);
@@ -243,6 +247,68 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         exportInstanceMenu->addAction(ui->actionExportInstanceFlamePack);
         ui->actionExportInstance->setMenu(exportInstanceMenu);
     }
+
+#ifdef Q_OS_MACOS
+    auto* prismMenu = new QMenu(tr("Play with Prism"), ui->fileMenu);
+    ui->fileMenu->insertMenu(ui->actionKillInstance, prismMenu);
+    connect(prismMenu, &QMenu::aboutToShow, this, [this, prismMenu] {
+        prismMenu->clear();
+        const QDir data(QDir::home().filePath("Library/Application Support/PrismLauncher"));
+        const auto bundle = QStringLiteral("Prism Launcher.app/Contents/MacOS/prismlauncher");
+        const QString systemBinary = "/Applications/" + bundle;
+        const QString userBinary = QDir::home().filePath("Applications/" + bundle);
+        const auto isExecutable = [](const QString& path) {
+            const QFileInfo file(path);
+            return file.isFile() && file.isExecutable();
+        };
+        const QString executable = isExecutable(systemBinary) ? systemBinary : userBinary;
+        if (!isExecutable(executable)) {
+            prismMenu->addAction(tr("Prism Launcher is not installed"))->setEnabled(false);
+            return;
+        }
+
+        INIFile settings;
+        settings.loadFile(data.filePath("prismlauncher.cfg"));
+        QStringList roots = { settings.value("InstanceDir", "instances").toString() };
+        roots.append(settings.value("AdditionalInstanceDirs").toStringList());
+        QSet<QString> ids;
+        for (const auto& root : roots) {
+            if (root.isEmpty()) {
+                continue;
+            }
+            const QDir instances(data.absoluteFilePath(root));
+            for (const auto& entry : instances.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::IgnoreCase)) {
+                const auto id = entry.fileName();
+                if (ids.contains(id) || id.startsWith('.')) {
+                    continue;
+                }
+                INIFile instance;
+                if (!instance.loadFile(QDir(entry.absoluteFilePath()).filePath("instance.cfg"))) {
+                    continue;
+                }
+                ids.insert(id);
+                QString name = instance.value("name", id).toString();
+                auto* action = prismMenu->addAction(name);
+                action->setToolTip(tr("Launch %1 in Prism using its selected account").arg(id));
+                connect(action, &QAction::triggered, this, [this, executable, data, id] {
+                    if (!QProcess::startDetached(executable, { "--dir", data.absolutePath(), "--launch", id })) {
+                        QMessageBox::warning(this, tr("Could not start Prism Launcher"), tr("Open Prism Launcher and try launching the instance there."));
+                    }
+                });
+            }
+        }
+        if (ids.empty()) {
+            prismMenu->addAction(tr("No Prism instances found"))->setEnabled(false);
+        }
+        prismMenu->addSeparator();
+        auto* openPrism = prismMenu->addAction(tr("Open Prism Launcher"));
+        connect(openPrism, &QAction::triggered, this, [this, executable, data] {
+            if (!QProcess::startDetached(executable, { "--dir", data.absolutePath(), "--show-window" })) {
+                QMessageBox::warning(this, tr("Could not start Prism Launcher"), tr("Open Prism Launcher from Applications."));
+            }
+        });
+    });
+#endif
 
     // hide, disable and show stuff
     {

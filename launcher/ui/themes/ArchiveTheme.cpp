@@ -29,6 +29,7 @@ QString ArchiveTheme::appStyleSheet()
         QToolBar#instanceToolBar QToolButton { padding: 3px 6px; }
         QToolBar::separator { background: #35343d; width: 1px; height: 1px; margin: 8px; }
         QToolButton { border: 1px solid transparent; border-radius: 9px; padding: 4px 7px; }
+        QToolBar#mainToolBar QToolButton#archiveAccountsButton { padding: 2px 4px; }
         QToolButton:hover { background: #303039; }
         QToolButton:pressed, QToolButton:checked { background: #3b304f; }
         QToolButton:focus, QPushButton:focus { border: 1px solid #9ecbff; }
