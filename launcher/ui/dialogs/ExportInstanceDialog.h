@@ -56,6 +56,7 @@ class ExportInstanceDialog : public QDialog {
     ~ExportInstanceDialog();
 
     virtual void done(int result);
+    const QString& exportedPath() const { return m_exportedPath; }
 
    private:
     void doExport();
@@ -66,6 +67,7 @@ class ExportInstanceDialog : public QDialog {
     BaseInstance* m_instance;
     FileIgnoreProxy* m_proxyModel;
     FastFileIconProvider m_icons;
+    QString m_exportedPath;
 
    private slots:
     void rowsInserted(QModelIndex parent, int top, int bottom);

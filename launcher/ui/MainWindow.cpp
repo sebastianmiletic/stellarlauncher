@@ -300,6 +300,26 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
             prismMenu->addAction(tr("No Prism instances found"))->setEnabled(false);
         }
         prismMenu->addSeparator();
+        auto* importPrism = prismMenu->addAction(tr("Import selected Archive instance into Prism…"));
+        importPrism->setEnabled(m_selectedInstance && !m_selectedInstance->isRunning());
+        connect(importPrism, &QAction::triggered, this, [this, executable, data] {
+            if (!m_selectedInstance || m_selectedInstance->isRunning()) {
+                return;
+            }
+            ExportInstanceDialog dialog(m_selectedInstance, this);
+            dialog.setWindowTitle(tr("Export a copy for Prism Launcher"));
+            if (dialog.exec() != QDialog::Accepted || dialog.exportedPath().isEmpty()) {
+                return;
+            }
+
+            const auto url = QUrl::fromLocalFile(dialog.exportedPath()).toString(QUrl::FullyEncoded);
+            if (!QProcess::startDetached(executable, { "--dir", data.absolutePath(), "--import", url })) {
+                QMessageBox::warning(this, tr("Could not start Prism Launcher"),
+                                     tr("The ZIP was saved. Open Prism Launcher and import it from Add Instance."));
+            }
+        });
+
+        prismMenu->addSeparator();
         auto* openPrism = prismMenu->addAction(tr("Open Prism Launcher"));
         connect(openPrism, &QAction::triggered, this, [this, executable, data] {
             if (!QProcess::startDetached(executable, { "--dir", data.absolutePath(), "--show-window" })) {

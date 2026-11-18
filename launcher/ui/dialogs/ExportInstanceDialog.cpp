@@ -134,11 +134,20 @@ void ExportInstanceDialog::doExport()
 {
     auto name = FS::RemoveInvalidFilenameChars(m_instance->name());
 
-    const QString output = QFileDialog::getSaveFileName(this, tr("Export %1").arg(m_instance->name()),
+    QString output = QFileDialog::getSaveFileName(this, tr("Export %1").arg(m_instance->name()),
                                                         FS::PathCombine(QDir::homePath(), name + ".zip"), "Zip (*.zip)", nullptr);
     if (output.isEmpty()) {
         QDialog::done(QDialog::Rejected);
         return;
+    }
+
+    if (!output.endsWith(".zip", Qt::CaseInsensitive)) {
+        output += ".zip";
+        if (QFileInfo::exists(output)) {
+            QMessageBox::warning(this, tr("File already exists"), tr("Choose a different ZIP name to avoid replacing an existing file."));
+            QDialog::done(QDialog::Rejected);
+            return;
+        }
     }
 
     SaveIcon(m_instance);
@@ -160,6 +169,9 @@ void ExportInstanceDialog::doExport()
     ProgressDialog progress(this);
     progress.showSkipButton();
     auto result = progress.execWithTask(task.get());
+    if (result == QDialog::Accepted) {
+        m_exportedPath = output;
+    }
     QDialog::done(result);
 }
 
