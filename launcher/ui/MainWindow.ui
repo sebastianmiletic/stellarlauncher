@@ -49,7 +49,6 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
-   <addaction name="actionCheckUpdate"/>
    <addaction name="actionAccountsButton"/>
   </widget>
   <widget class="QToolBar" name="newsToolBar">

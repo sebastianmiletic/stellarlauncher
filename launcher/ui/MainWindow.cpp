@@ -146,6 +146,18 @@ QString profileInUseFilter(const QString& profile, bool used)
         return profile;
     }
 }
+
+QIcon accountIcon(const MinecraftAccount* account = nullptr)
+{
+    static const QIcon steve(":/icons/multimc/128x128/instances/steve_legacy.png");
+    if (account) {
+        const auto face = account->getFace();
+        if (!face.isNull()) {
+            return QIcon(face);
+        }
+    }
+    return steve;
+}
 }  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWindow)
@@ -692,12 +704,7 @@ void MainWindow::repopulateAccountsMenu()
                 action->setChecked(true);
             }
 
-            auto face = account->getFace();
-            if (!face.isNull()) {
-                action->setIcon(face);
-            } else {
-                action->setIcon(QIcon(":/archive-account.svg"));
-            }
+            action->setIcon(accountIcon(account.get()));
 
             const int highestNumberKey = 9;
             if (i < highestNumberKey) {
@@ -720,7 +727,7 @@ void MainWindow::repopulateAccountsMenu()
     ui->accountsMenu->addSeparator();
     ui->accountsMenu->addAction(ui->actionManageSkins);
     auto* addAccount = new QAction(tr("Add Microsoft account…"), accountsButtonMenu);
-    addAccount->setIcon(QIcon(":/archive-account.svg"));
+    addAccount->setIcon(accountIcon());
     connect(addAccount, &QAction::triggered, this, [this] {
         if (!APPLICATION->capabilities().testFlag(Application::SupportsMSA)) {
             QMessageBox::information(this, tr("Set up Microsoft sign-in"),
@@ -776,24 +783,14 @@ void MainWindow::defaultAccountChanged()
 {
     repopulateAccountsMenu();
 
-    MinecraftAccountPtr account = APPLICATION->accounts()->defaultAccount();
-
-    // FIXME: this needs adjustment for MSA
-    if (account && account->profileName() != "") {
-        auto profileLabel = profileInUseFilter(account->displayName(), account->isInUse());
-        ui->actionAccountsButton->setText(profileLabel);
-        auto face = account->getFace();
-        if (face.isNull()) {
-            ui->actionAccountsButton->setIcon(QIcon(":/archive-account.svg"));
-        } else {
-            ui->actionAccountsButton->setIcon(face);
-        }
-        return;
+    const auto account = APPLICATION->accounts()->defaultAccount();
+    if (account && !account->profileName().isEmpty()) {
+        ui->actionAccountsButton->setText(profileInUseFilter(account->displayName(), account->isInUse()));
+        ui->actionAccountsButton->setIcon(accountIcon(account.get()));
+    } else {
+        ui->actionAccountsButton->setText(tr("Accounts"));
+        ui->actionAccountsButton->setIcon(accountIcon());
     }
-
-    // Set the icon to the "no account" icon.
-    ui->actionAccountsButton->setIcon(QIcon(":/archive-account.svg"));
-    ui->actionAccountsButton->setText(tr("Accounts"));
 }
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* ev)

@@ -48,6 +48,7 @@
 
 #include <QDebug>
 
+#include <QImage>
 #include <QPainter>
 
 #include "minecraft/auth/AccountData.h"
@@ -101,16 +102,21 @@ AccountState MinecraftAccount::accountState() const
 
 QPixmap MinecraftAccount::getFace(int width, int height) const
 {
-    QPixmap skinTexture;
-    if (!skinTexture.loadFromData(data.minecraftProfile.skin.data, "PNG")) {
-        return QPixmap();
+    const auto texture = QImage::fromData(data.minecraftProfile.skin.data, "PNG");
+    const int size = texture.width() / 8;
+    if (size < 8 || texture.width() % 64 != 0 ||
+        (texture.height() != texture.width() && texture.height() * 2 != texture.width())) {
+        return {};
     }
-    QPixmap skin = QPixmap(8, 8);
-    skin.fill(QColorConstants::Transparent);
-    QPainter painter(&skin);
-    painter.drawPixmap(0, 0, skinTexture.copy(8, 8, 8, 8));
-    painter.drawPixmap(0, 0, skinTexture.copy(40, 8, 8, 8));
-    return skin.scaled(width, height, Qt::KeepAspectRatio);
+
+    QImage face(size, size, QImage::Format_ARGB32_Premultiplied);
+    face.fill(Qt::transparent);
+    {
+        QPainter painter(&face);
+        painter.drawImage(0, 0, texture, size, size, size, size);
+        painter.drawImage(0, 0, texture, 5 * size, size, size, size);
+    }
+    return QPixmap::fromImage(face.scaled(width, height, Qt::KeepAspectRatio, Qt::FastTransformation));
 }
 
 shared_qobject_ptr<AuthFlow> MinecraftAccount::login(bool useDeviceCode)
