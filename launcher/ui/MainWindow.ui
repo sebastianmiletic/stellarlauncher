@@ -323,7 +323,7 @@
     <iconset theme="settings"/>
    </property>
    <property name="text">
-    <string>Manage &amp;Skins...</string>
+    <string>Change Minecraft &amp;Skin…</string>
    </property>
   </action>
   <action name="actionManageAccounts">

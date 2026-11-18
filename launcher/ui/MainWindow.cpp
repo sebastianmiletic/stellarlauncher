@@ -50,6 +50,7 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <QVariant>
+#include <QtAlgorithms>
 
 #include <QAction>
 #include <QActionGroup>
@@ -68,6 +69,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QProgressDialog>
+#include <QPushButton>
 #include <QShortcut>
 #include <QStatusBar>
 #include <QTextEdit>
@@ -160,6 +162,25 @@ QIcon accountIcon(const MinecraftAccount* account = nullptr)
     }
     return steve;
 }
+void installArchiveLook(QWidget* parent, const QDir& game)
+{
+    const auto target = game.filePath("resourcepacks/Archive Look.zip");
+    const auto pack = FS::read(":/archive-look.zip");
+    if (!pack) {
+        QMessageBox::warning(parent, QObject::tr("Could not install Archive Look"), pack.error());
+        return;
+    }
+    if (!QFileInfo::exists(target)) {
+        const auto result = FS::write(target, *pack);
+        if (!result) {
+            QMessageBox::warning(parent, QObject::tr("Could not install Archive Look"), result.error());
+            return;
+        }
+    }
+    QMessageBox::information(parent, QObject::tr("Archive Look is ready"),
+                             QObject::tr("In Minecraft Java 1.21.9 through 26.3, open Options → Resource Packs and enable Archive Look."));
+}
+
 }  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWindow)
@@ -248,9 +269,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     }
 
 #ifdef Q_OS_MACOS
-    auto* prismMenu = new QMenu(tr("Play with Prism"), ui->fileMenu);
+    m_prismMenu = new QMenu(tr("Play with Prism"), ui->fileMenu);
+    auto* prismMenu = m_prismMenu;
     ui->fileMenu->insertMenu(ui->actionKillInstance, prismMenu);
     connect(prismMenu, &QMenu::aboutToShow, this, [this, prismMenu] {
+        qDeleteAll(prismMenu->findChildren<QMenu*>(QString(), Qt::FindDirectChildrenOnly));
         prismMenu->clear();
         const QDir data(QDir::home().filePath("Library/Application Support/PrismLauncher"));
         const auto bundle = QStringLiteral("Prism Launcher.app/Contents/MacOS/prismlauncher");
@@ -271,6 +294,15 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         QStringList roots = { settings.value("InstanceDir", "instances").toString() };
         roots.append(settings.value("AdditionalInstanceDirs").toStringList());
         QSet<QString> ids;
+        auto* worldsMenu = new QMenu(tr("Open a saved world"), prismMenu);
+        auto* looksMenu = new QMenu(tr("Install Archive Look"), prismMenu);
+        const auto launch = [this, executable, data](QStringList args) {
+            args.prepend(data.absolutePath());
+            args.prepend("--dir");
+            if (!QProcess::startDetached(executable, args)) {
+                QMessageBox::warning(this, tr("Could not start Prism Launcher"), tr("Open Prism Launcher and try launching the instance there."));
+            }
+        };
         for (const auto& root : roots) {
             if (root.isEmpty()) {
                 continue;
@@ -289,17 +321,42 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
                 QString name = instance.value("name", id).toString();
                 auto* action = prismMenu->addAction(name);
                 action->setToolTip(tr("Launch %1 in Prism using its selected account").arg(id));
-                connect(action, &QAction::triggered, this, [this, executable, data, id] {
-                    if (!QProcess::startDetached(executable, { "--dir", data.absolutePath(), "--launch", id })) {
-                        QMessageBox::warning(this, tr("Could not start Prism Launcher"), tr("Open Prism Launcher and try launching the instance there."));
+                connect(action, &QAction::triggered, this, [launch, id] { launch({ "--launch", id }); });
+
+                const QDir instanceDir(entry.absoluteFilePath());
+                const auto minecraft = instanceDir.filePath("minecraft");
+                const auto dotMinecraft = instanceDir.filePath(".minecraft");
+                const QDir game(!QFileInfo::exists(minecraft) && QFileInfo(dotMinecraft).isDir() ? dotMinecraft : minecraft);
+                auto* look = looksMenu->addAction(name);
+                connect(look, &QAction::triggered, this, [this, game] { installArchiveLook(this, game); });
+
+                const QDir saves(game.filePath("saves"));
+                QMenu* instanceWorlds = nullptr;
+                for (const auto& world : saves.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::IgnoreCase)) {
+                    if (!QFileInfo(QDir(world.absoluteFilePath()).filePath("level.dat")).isFile()) {
+                        continue;
                     }
-                });
+                    if (!instanceWorlds) {
+                        instanceWorlds = worldsMenu->addMenu(name);
+                    }
+                    const auto folder = world.fileName();
+                    auto* playWorld = instanceWorlds->addAction(folder);
+                    connect(playWorld, &QAction::triggered, this, [launch, id, folder] { launch({ "--launch", id, "--world", folder }); });
+                }
             }
         }
         if (ids.empty()) {
             prismMenu->addAction(tr("No Prism instances found"))->setEnabled(false);
         }
         prismMenu->addSeparator();
+        if (worldsMenu->isEmpty()) {
+            worldsMenu->addAction(tr("No saved worlds found"))->setEnabled(false);
+        }
+        prismMenu->addMenu(worldsMenu);
+        if (looksMenu->isEmpty()) {
+            looksMenu->addAction(tr("No Prism instances found"))->setEnabled(false);
+        }
+        prismMenu->addMenu(looksMenu);
         auto* importPrism = prismMenu->addAction(tr("Import selected Archive instance into Prism…"));
         importPrism->setEnabled(m_selectedInstance && !m_selectedInstance->isRunning());
         connect(importPrism, &QAction::triggered, this, [this, executable, data] {
@@ -328,6 +385,15 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         });
     });
 #endif
+
+    auto* archiveLook = new QAction(tr("Install Archive Look for selected instance"), ui->fileMenu);
+    ui->fileMenu->insertAction(ui->actionKillInstance, archiveLook);
+    connect(ui->fileMenu, &QMenu::aboutToShow, this, [this, archiveLook] { archiveLook->setEnabled(m_selectedInstance != nullptr); });
+    connect(archiveLook, &QAction::triggered, this, [this] {
+        if (m_selectedInstance) {
+            installArchiveLook(this, QDir(m_selectedInstance->gameRoot()));
+        }
+    });
 
     // hide, disable and show stuff
     {
@@ -759,9 +825,6 @@ void MainWindow::repopulateAccountsMenu()
 
     auto* accounts = APPLICATION->accounts();
     auto defaultAccount = accounts->defaultAccount();
-
-    bool canChangeSkin = defaultAccount && (defaultAccount->accountType() == AccountType::MSA) && !defaultAccount->isActive();
-    ui->actionManageSkins->setEnabled(canChangeSkin);
 
     QString activeProfileId = "";
     if (defaultAccount) {
@@ -1550,7 +1613,9 @@ void MainWindow::on_actionManageSkins_triggered()
     if (account && (account->accountType() == AccountType::MSA) && !account->isActive()) {
         SkinManageDialog dialog(this, account);
         dialog.exec();
+        return;
     }
+    DesktopServices::openUrl(QUrl("https://www.minecraft.net/en-us/msaprofile/mygames/editskin"));
 }
 
 void MainWindow::on_actionManageAccounts_triggered()
@@ -1757,13 +1822,43 @@ void MainWindow::instanceActivated(QModelIndex index)
         }
         return;
     }
+    launchFromWindow(inst);
+}
+
+void MainWindow::launchFromWindow(MinecraftInstance* inst)
+{
+#ifdef Q_OS_MACOS
+    const auto* accounts = APPLICATION->accounts();
+    bool ownsJava = false;
+    for (int i = 0; i < accounts->count(); ++i) {
+        if (const auto account = accounts->at(i); account && account->ownsMinecraft()) {
+            ownsJava = true;
+            break;
+        }
+    }
+    if (!ownsJava && m_prismMenu) {
+        QMessageBox choice(QMessageBox::Question, tr("Play Minecraft: Java Edition"),
+                           tr("Use your signed-in Prism Launcher account to play the full game. Pick an installed Prism instance, or import a copy of the selected Archive instance."),
+                           QMessageBox::Cancel, this);
+        auto* playWithPrism = choice.addButton(tr("Play with Prism"), QMessageBox::AcceptRole);
+        auto* otherOptions = choice.addButton(tr("Archive launch options…"), QMessageBox::ActionRole);
+        choice.exec();
+        if (choice.clickedButton() == playWithPrism) {
+            m_prismMenu->exec(mapToGlobal(QPoint(20, ui->mainToolBar->geometry().bottom())));
+            return;
+        }
+        if (choice.clickedButton() != otherOptions) {
+            return;
+        }
+    }
+#endif
     APPLICATION->launch(inst);
 }
 
 void MainWindow::on_actionLaunchInstance_triggered()
 {
     if (m_selectedInstance && !m_selectedInstance->isRunning()) {
-        APPLICATION->launch(m_selectedInstance);
+        launchFromWindow(m_selectedInstance);
     }
 }
 

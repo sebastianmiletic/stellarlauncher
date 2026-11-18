@@ -228,6 +228,7 @@ class MainWindow : public QMainWindow {
     void setSelectedInstanceById(const QString& id);
     void updateStatusCenter();
     void setInstanceActionsEnabled(bool enabled);
+    void launchFromWindow(MinecraftInstance* inst);
 
     void runModalTask(Task* task);
     void instanceFromInstanceTask(InstanceTask* task);
@@ -251,6 +252,9 @@ class MainWindow : public QMainWindow {
     unique_qobject_ptr<NewsChecker> m_newsChecker;
 
     MinecraftInstance* m_selectedInstance = nullptr;
+#ifdef Q_OS_MACOS
+    QMenu* m_prismMenu = nullptr;
+#endif
     QString m_currentInstIcon;
 
     // managed by the application object
