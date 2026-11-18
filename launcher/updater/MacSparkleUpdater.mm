@@ -20,8 +20,6 @@
 #include "Application.h"
 #include <QDebug>
 
-#include "Application.h"
-
 #include <Cocoa/Cocoa.h>
 #include <Sparkle/Sparkle.h>
 
