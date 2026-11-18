@@ -72,6 +72,7 @@ class MinecraftInstance : public BaseInstance {
     bool canExport() const override { return true; }
 
     void populateLaunchMenu(QMenu* menu) override;
+    void populateLaunchMenu(QMenu* menu, QAction* normalLaunch);
 
     ////// Directories and files //////
     QString jarModsDir() const;

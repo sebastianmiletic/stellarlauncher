@@ -774,8 +774,11 @@ void MainWindow::updateLaunchButton()
         launchMenu->clear();
     else
         launchMenu = new QMenu(this);
-    if (m_selectedInstance)
-        m_selectedInstance->populateLaunchMenu(launchMenu);
+    if (m_selectedInstance) {
+        auto* normalLaunch = new QAction(launchMenu);
+        connect(normalLaunch, &QAction::triggered, this, &MainWindow::on_actionLaunchInstance_triggered);
+        m_selectedInstance->populateLaunchMenu(launchMenu, normalLaunch);
+    }
     ui->actionLaunchInstance->setMenu(launchMenu);
 }
 

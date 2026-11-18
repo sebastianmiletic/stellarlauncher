@@ -312,8 +312,16 @@ QSet<QString> MinecraftInstance::traits() const
 // FIXME: move UI code out of MinecraftInstance
 void MinecraftInstance::populateLaunchMenu(QMenu* menu)
 {
-    QAction* normalLaunch = menu->addAction(tr("&Launch"));
+    auto* normalLaunch = new QAction(menu);
+    connect(normalLaunch, &QAction::triggered, this, [this] { APPLICATION->launch(this); });
+    populateLaunchMenu(menu, normalLaunch);
+}
+
+void MinecraftInstance::populateLaunchMenu(QMenu* menu, QAction* normalLaunch)
+{
+    normalLaunch->setText(tr("&Launch"));
     normalLaunch->setShortcut(QKeySequence::Open);
+    menu->addAction(normalLaunch);
     QAction* normalLaunchOffline = menu->addAction(tr("Launch &Offline"));
     normalLaunchOffline->setShortcut(QKeySequence(tr("Ctrl+Shift+O")));
     QAction* normalLaunchDemo = menu->addAction(tr("Launch &Demo"));
@@ -321,7 +329,6 @@ void MinecraftInstance::populateLaunchMenu(QMenu* menu)
 
     normalLaunchDemo->setEnabled(supportsDemo());
 
-    connect(normalLaunch, &QAction::triggered, this, [this] { APPLICATION->launch(this); });
     connect(normalLaunchOffline, &QAction::triggered, this, [this] { APPLICATION->launch(this, LaunchMode::Offline); });
     connect(normalLaunchDemo, &QAction::triggered, this, [this] { APPLICATION->launch(this, LaunchMode::Demo); });
 
