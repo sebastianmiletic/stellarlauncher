@@ -627,9 +627,6 @@ StellarGallery::StellarGallery(Actions actions, QWidget* parent)
     connect(m_launchTimer, &QTimer::timeout, this, &StellarGallery::updateLaunch);
 
     m_wallpapers = QDir(APPLICATION->dataRoot()).filePath("wallpapers");
-    const auto previous = QDir::home().filePath("Library/Application Support/Stellar Gallery/Wallpapers");
-    if (QDir(previous).exists() && !QDir(m_wallpapers).exists())
-        m_wallpapers = previous;
     QFile catalog(":/stellar-gallery/wallpapers.json");
     if (catalog.open(QIODevice::ReadOnly)) {
         const auto entries = QJsonDocument::fromJson(catalog.readAll()).array();
@@ -1364,7 +1361,11 @@ void StellarGallery::showPreferences()
 
 QStringList StellarGallery::images(const Collection& collection) const
 {
-    const QDir directory(QDir(m_wallpapers).filePath(collection.id));
+    QDir directory(QDir(m_wallpapers).filePath(collection.id));
+    if (collection.id != "animated" && !directory.exists()) {
+        const auto legacy = QDir::home().filePath("Library/Application Support/Stellar Gallery/Wallpapers");
+        directory = QDir(QDir(legacy).filePath(collection.id));
+    }
     QStringList paths;
     const auto contents = directory.entryInfoList({ "*.jpg", "*.jpeg", "*.png", "*.webp", "*.gif" }, QDir::Files, QDir::Name);
     for (const auto& entry : contents)
@@ -1414,7 +1415,8 @@ QPixmap StellarGallery::wallpaperPixmap(const QString& file)
         const auto size = reader.size();
         if (size.isValid())
             reader.setScaledSize(size.scaled(1600, 1200, Qt::KeepAspectRatio));
-        m_artwork.insert(file, QPixmap::fromImage(reader.read()));
+        const auto pixmap = QPixmap::fromImage(reader.read());
+        m_artwork.insert(file, pixmap.isNull() ? QPixmap(QStringLiteral(":/stellar-gallery/fallback.jpg")) : pixmap);
     }
     return m_artwork.value(file);
 }
