@@ -525,8 +525,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     auto* originalView = takeCentralWidget();
     originalView->setParent(this);
     originalView->hide();
-    ui->mainToolBar->hide();
-    ui->instanceToolBar->hide();
+    removeToolBar(ui->mainToolBar);
+    removeToolBar(ui->instanceToolBar);
+    removeToolBar(ui->newsToolBar);
     menuBar()->hide();
     statusBar()->hide();
     auto* gallery = new StellarGallery({
@@ -604,7 +605,7 @@ QMenu* MainWindow::createPopupMenu()
 }
 void MainWindow::setStatusBarVisibility(bool state)
 {
-    statusBar()->setVisible(state);
+    statusBar()->hide();
     APPLICATION->settings()->set("StatusBarVisible", state);
 }
 void MainWindow::lockToolbars(bool state)
@@ -713,8 +714,8 @@ void MainWindow::showInstanceContextMenu(const QPoint& pos)
 
 void MainWindow::updateMainToolBar()
 {
-    ui->menuBar->show();
-    ui->mainToolBar->setVisible(ui->menuBar->isNativeMenuBar() || !APPLICATION->settings()->get("MenuBarInsteadOfToolBar").toBool());
+    ui->menuBar->hide();
+    ui->mainToolBar->hide();
 }
 
 void MainWindow::updateLaunchButton()
