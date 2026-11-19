@@ -34,6 +34,7 @@
 #include <QSaveFile>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QStyleOptionButton>
 #include <QTemporaryFile>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -101,10 +102,123 @@ void drawArtwork(QPainter& painter, const QRect& bounds, const QPixmap& picture)
                                                        (picture.height() - source.height()) / 2), source));
 }
 
+bool motionEnabled()
+{
+    return APPLICATION->settings()->get("StellarMotion").toBool();
+}
+
+class ButtonFeedback final : public QObject {
+public:
+    explicit ButtonFeedback(QAbstractButton* button) : m_button(button)
+    {
+        m_button->installEventFilter(this);
+        m_animation.setEasingCurve(QEasingCurve::OutCubic);
+        connect(&m_animation, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+            m_level = value.toReal();
+            m_button->update();
+        });
+        connect(m_button, &QAbstractButton::pressed, this, [this] { transition(-1); });
+        connect(m_button, &QAbstractButton::released, this, [this] { transition(m_hovered ? 1 : 0); });
+    }
+
+    void paint(QPainter& painter, const QPainterPath& surface, bool light = false) const
+    {
+        if (!m_button->isEnabled() || qFuzzyIsNull(m_level))
+            return;
+        QColor color = m_level < 0 || light ? QColor("#14111b") : QColor("#e9e3f6");
+        color.setAlphaF(qAbs(m_level) * (m_level < 0 ? 0.20 : light ? 0.07 : 0.12));
+        painter.fillPath(surface, color);
+    }
+
+protected:
+    bool eventFilter(QObject*, QEvent* event) override
+    {
+        switch (event->type()) {
+        case QEvent::Enter:
+            m_hovered = true;
+            transition(m_button->isDown() ? -1 : 1);
+            break;
+        case QEvent::Leave:
+        case QEvent::Hide:
+            m_hovered = false;
+            transition(0);
+            break;
+        case QEvent::EnabledChange:
+            transition(m_button->isEnabled() && m_hovered ? 1 : 0);
+            break;
+        default:
+            break;
+        }
+        return false;
+    }
+
+private:
+    void transition(qreal target)
+    {
+        m_animation.stop();
+        if (!motionEnabled() || !m_button->isVisible() || !m_button->isEnabled() || m_level == target) {
+            m_level = target;
+            m_button->update();
+            return;
+        }
+        m_animation.setDuration(target < 0 ? 75 : target == 0 ? 160 : 125);
+        m_animation.setStartValue(m_level);
+        m_animation.setEndValue(target);
+        m_animation.start();
+    }
+
+    QAbstractButton* m_button;
+    QVariantAnimation m_animation;
+    qreal m_level = 0;
+    bool m_hovered = false;
+};
+
+class GalleryButton final : public QPushButton {
+public:
+    explicit GalleryButton(QWidget* parent) : GalleryButton({}, {}, parent) {}
+    GalleryButton(const QString& text, QWidget* parent) : GalleryButton({}, text, parent) {}
+    GalleryButton(const QIcon& icon, const QString& text, QWidget* parent)
+        : QPushButton(icon, text, parent), m_feedback(this)
+    {
+        setCursor(Qt::PointingHandCursor);
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QStyleOptionButton option;
+        initStyleOption(&option);
+        option.state.setFlag(QStyle::State_MouseOver, false);
+        option.state.setFlag(QStyle::State_Sunken, false);
+
+        QPainter painter(this);
+        style()->drawControl(QStyle::CE_PushButtonBevel, &option, &painter, this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        QPainterPath surface;
+        surface.addRoundedRect(option.rect.adjusted(2, 2, -2, -2), 7, 7);
+        m_feedback.paint(painter, surface, property("stellarPrimary").toBool());
+        // Draw the label and focus indicator above the animated background.
+        QStyleOptionButton label(option);
+        label.rect = style()->subElementRect(QStyle::SE_PushButtonContents, &option, this);
+        style()->drawControl(QStyle::CE_PushButtonLabel, &label, &painter, this);
+        if (hasFocus()) {
+            QStyleOptionFocusRect focus;
+            focus.initFrom(this);
+            focus.state = option.state;
+            focus.rect = style()->subElementRect(QStyle::SE_PushButtonFocusRect, &option, this);
+            focus.backgroundColor = palette().color(QPalette::Button);
+            style()->drawPrimitive(QStyle::PE_FrameFocusRect, &focus, &painter, this);
+        }
+    }
+
+private:
+    ButtonFeedback m_feedback;
+};
+
 class GalleryTile final : public QAbstractButton {
 public:
     GalleryTile(const QString& title, QString version, QPixmap image, QWidget* parent)
-        : QAbstractButton(parent), m_version(std::move(version)), m_image(std::move(image))
+        : QAbstractButton(parent), m_version(std::move(version)), m_image(std::move(image)), m_feedback(this)
     {
         setText(title);
         setAccessibleName(title);
@@ -177,8 +291,7 @@ protected:
             painter.setPen(QColor("#cbc9d0"));
             painter.drawText(QRect(17, height() - 35, width() - 34, 19), Qt::AlignVCenter, m_version);
         }
-        if (underMouse())
-            painter.fillRect(bounds, QColor(236, 235, 240, 12));
+        m_feedback.paint(painter, shape);
         painter.restore();
         painter.setPen(QPen(QColor("#37363d"), 1));
         painter.drawPath(shape);
@@ -192,6 +305,7 @@ private:
     QString m_version;
     QPixmap m_image;
     QVariantAnimation m_focus;
+    ButtonFeedback m_feedback;
     double m_border = 0;
 };
 
@@ -200,7 +314,7 @@ public:
     InstanceDetail(QWidget* parent, const std::function<void()>& back, const std::function<void()>& play,
                    const std::function<void()>& options, const std::function<void()>& accounts)
         : QWidget(parent), m_title(new QLabel(this)), m_description(new QLabel(this)),
-          m_play(new QPushButton(this)), m_progress(new QProgressBar(this))
+          m_play(new GalleryButton(this)), m_progress(new QProgressBar(this))
     {
         setObjectName("stellarInstance");
         auto* layout = new QVBoxLayout(this);
@@ -208,13 +322,13 @@ public:
         layout->setSpacing(0);
 
         auto* header = new QHBoxLayout;
-        auto* backButton = new QPushButton(tr("‹  Library"), this);
+        auto* backButton = new GalleryButton(tr("‹  Library"), this);
         backButton->setAccessibleName(tr("Back to Library"));
         backButton->setObjectName("stellarArtButton");
         connect(backButton, &QPushButton::clicked, this, back);
         header->addWidget(backButton);
         header->addStretch();
-        auto* accountButton = new QPushButton(QIcon(":/icons/flat_white/scalable/accounts.svg"), QString(), this);
+        auto* accountButton = new GalleryButton(QIcon(":/icons/flat_white/scalable/accounts.svg"), QString(), this);
         accountButton->setObjectName("stellarArtButton");
         accountButton->setToolTip(tr("Minecraft Accounts"));
         accountButton->setAccessibleName(tr("Minecraft Accounts"));
@@ -252,7 +366,7 @@ public:
         launch->addWidget(m_progress);
         footer->addLayout(launch);
 
-        auto* menu = new QPushButton(QStringLiteral("•••"), this);
+        auto* menu = new GalleryButton(QStringLiteral("•••"), this);
         menu->setObjectName("stellarInstanceOptions");
         menu->setAccessibleName(tr("Instance Options"));
         menu->setToolTip(tr("Instance Options"));
@@ -470,7 +584,7 @@ void StellarGallery::selectIndex(int index, bool animate)
         return;
     m_index = std::clamp(index, 0, int(m_tiles.size()) - 1);
     for (int i = 0; i < m_tiles.size(); ++i)
-        static_cast<GalleryTile*>(m_tiles[i])->setSelected(i == m_index, animate && APPLICATION->settings()->get("StellarMotion").toBool());
+        static_cast<GalleryTile*>(m_tiles[i])->setSelected(i == m_index, animate && motionEnabled());
     if (m_index < m_ids.size() && m_selected != m_ids[m_index]) {
         m_selected = m_ids[m_index];
         m_saveSelection->start();
@@ -485,7 +599,7 @@ void StellarGallery::selectIndex(int index, bool animate)
         target = tile.left() - gap;
     m_slide->stop();
     target = std::clamp(target, bar->minimum(), bar->maximum());
-    if (animate && target != offset && APPLICATION->settings()->get("StellarMotion").toBool()) {
+    if (animate && target != offset && motionEnabled()) {
         m_slide->setStartValue(offset);
         m_slide->setEndValue(target);
         m_slide->start();
@@ -575,7 +689,7 @@ void StellarGallery::playInstance(const QString& id)
     instance->setProperty("stellarGalleryFullscreen", APPLICATION->settings()->get("StellarFillScreen"));
     if (m_detailId == id)
         static_cast<InstanceDetail*>(m_detail)->setLaunchState(tr("Preparing…"), true,
-            APPLICATION->settings()->get("StellarMotion").toBool() &&
+            motionEnabled() &&
             APPLICATION->settings()->get("StellarLaunchAnimation").toString() != "off");
     if (!APPLICATION->launch(instance)) {
         finishLaunch();
@@ -684,7 +798,7 @@ void StellarGallery::mousePressEvent(QMouseEvent* event)
 void StellarGallery::showEvent(QShowEvent* event)
 {
     QWidget::showEvent(event);
-    if (std::exchange(m_opened, true) || !APPLICATION->settings()->get("StellarMotion").toBool() ||
+    if (std::exchange(m_opened, true) || !motionEnabled() ||
         !APPLICATION->settings()->get("StellarOpeningAnimation").toBool())
         return;
     auto* logo = new QLabel(this);
@@ -718,7 +832,7 @@ QFrame* StellarGallery::makePanel(const QString& title)
     auto* heading = new QLabel(title, m_panel);
     heading->setObjectName("stellarHeading");
     header->addWidget(heading, 1);
-    auto* close = new QPushButton(QStringLiteral("×"), m_panel);
+    auto* close = new GalleryButton(QStringLiteral("×"), m_panel);
     close->setAccessibleName(tr("Close"));
     close->setFixedWidth(34);
     connect(close, &QPushButton::clicked, this, &StellarGallery::dismissPanel);
@@ -733,6 +847,19 @@ void StellarGallery::placePanel()
     m_panel->move((width() - m_panel->width()) / 2, (height() - m_panel->height()) / 2);
     m_panel->show();
     m_panel->raise();
+    if (motionEnabled()) {
+        auto* panel = m_panel;
+        auto* opacity = new QGraphicsOpacityEffect(panel);
+        opacity->setOpacity(0.75);
+        panel->setGraphicsEffect(opacity);
+        auto* entrance = new QPropertyAnimation(opacity, "opacity", panel);
+        entrance->setDuration(135);
+        entrance->setEasingCurve(QEasingCurve::OutCubic);
+        entrance->setStartValue(0.75);
+        entrance->setEndValue(1.0);
+        connect(entrance, &QPropertyAnimation::finished, panel, [panel] { panel->setGraphicsEffect(nullptr); });
+        entrance->start(QAbstractAnimation::DeleteWhenStopped);
+    }
 }
 
 void StellarGallery::dismissPanel()
@@ -755,7 +882,7 @@ void StellarGallery::showActions(int index)
     int count = 0;
     const auto add = [this, panel, actions, &count](const QString& title, const QString& icon, std::function<void()> action) {
         const QIcon artwork(QStringLiteral(":/icons/flat_white/scalable/%1.svg").arg(icon));
-        auto* button = new QPushButton(artwork, QString(), panel);
+        auto* button = new GalleryButton(artwork, QString(), panel);
         button->setIconSize(QSize(17, 17));
         button->setAccessibleName(title);
         button->setToolTip(title);
@@ -804,7 +931,7 @@ void StellarGallery::showContent(const QString& id)
     auto* panel = makePanel(tr("Mods, Packs & Shaders"));
     panel->setFixedWidth(300);
     const auto add = [this, panel, id](const QString& title, const QString& page) {
-        auto* button = new QPushButton(title, panel);
+        auto* button = new GalleryButton(title, panel);
         panel->layout()->addWidget(button);
         connect(button, &QPushButton::clicked, panel, [this, id, page] {
             auto* instance = APPLICATION->instances()->getInstanceById(id);
@@ -816,7 +943,7 @@ void StellarGallery::showContent(const QString& id)
     add(tr("Mods"), "mods");
     add(tr("Resource Packs"), "resourcepacks");
     add(tr("Shaders"), "shaderpacks");
-    auto* look = new QPushButton(tr("Install Stellar Look"), panel);
+    auto* look = new GalleryButton(tr("Install Stellar Look"), panel);
     panel->layout()->addWidget(look);
     connect(look, &QPushButton::clicked, panel, [this, id] {
         dismissPanel();
@@ -893,8 +1020,8 @@ void StellarGallery::showCreator()
     field(tr("Minecraft"), version);
     field(tr("Loader"), loader);
     auto* controls = new QHBoxLayout;
-    auto* advanced = new QPushButton(tr("More Options…"), panel);
-    auto* submit = new QPushButton(tr("Create"), panel);
+    auto* advanced = new GalleryButton(tr("More Options…"), panel);
+    auto* submit = new GalleryButton(tr("Create"), panel);
     submit->setProperty("stellarPrimary", true);
     submit->setEnabled(false);
     controls->addWidget(advanced);
@@ -1105,16 +1232,16 @@ void StellarGallery::showWallpapers(const QString& instance)
     auto* files = new QListWidget(panel);
     files->setFixedHeight(168);
     files->setAccessibleName(tr("Available wallpapers"));
-    auto* apply = new QPushButton(tr("Use Wallpaper"), panel);
+    auto* apply = new GalleryButton(tr("Use Wallpaper"), panel);
     apply->setProperty("stellarPrimary", true);
     layout->addWidget(collections);
     layout->addWidget(files);
     auto* buttons = new QHBoxLayout;
-    auto* refresh = new QPushButton(tr("Fetch Collection"), panel);
+    auto* refresh = new GalleryButton(tr("Fetch Collection"), panel);
     buttons->addWidget(refresh);
     buttons->addStretch();
     if (!instance.isEmpty()) {
-        auto* reset = new QPushButton(tr("Reset"), panel);
+        auto* reset = new GalleryButton(tr("Reset"), panel);
         buttons->addWidget(reset);
         connect(reset, &QPushButton::clicked, panel, [this, instance] {
             auto covers = APPLICATION->settings()->get("StellarWallpaperCovers").toMap();
@@ -1199,7 +1326,7 @@ void StellarGallery::updateLaunch()
         return;
     }
     const bool showProgress = APPLICATION->settings()->get("StellarLaunchAnimation").toString() != "off";
-    const bool animate = showProgress && APPLICATION->settings()->get("StellarMotion").toBool();
+    const bool animate = showProgress && motionEnabled();
     if (state.startsWith("download ")) {
         const int progress = qBound(0, qRound(state.sliced(9).toDouble() * 100), 100);
         detail->setLaunchState(tr("Downloading…"), true, animate, showProgress && progress > 0 ? progress : -1);

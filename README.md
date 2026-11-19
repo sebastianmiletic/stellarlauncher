@@ -2,7 +2,7 @@
 
 <img src="tools/stellar-prism/screenshots/stellar-logo.png" width="96" alt="Stellar Launcher logo">
 
-[Download Stellar Launcher for Apple silicon](https://github.com/sebastianmiletic/archivelauncher/releases/tag/stellar-v1.4.2)
+[Download Stellar Launcher for Apple silicon](https://github.com/sebastianmiletic/archivelauncher/releases/tag/stellar-v1.4.3)
 
 ![Stellar's wallpaper gallery with three sample Minecraft instances](tools/stellar-prism/screenshots/gallery.png)
 
@@ -22,7 +22,7 @@ The gallery and Minecraft launch engine run in one Qt application. Stellar uses 
 
 Scroll past the last wallpaper card to **Create New Instance**, or press Command-N. The quick creator offers Vanilla and Fabric. **More Options** opens snapshots, other loaders, and modpacks. Right-click the create tile for **Import Instance** or **Copy Existing Instance** to bring over existing instances and worlds. Use **Minecraft Accounts** to add, switch, or remove Microsoft accounts. Online sign-in requires a Minecraft-approved Stellar application ID as described above. **Change Skin** opens the in-app editor for the signed-in Microsoft account.
 
-**Settings** in the gallery’s right-click panel (Command-comma) controls the opening animation, Minecraft fullscreen, and the launch wallpaper transition. The instance wallpaper stays visible while a small progress indicator shows preparation, downloads, and Minecraft startup.
+**Settings** in the gallery’s right-click panel (Command-comma) controls opening and hover animations, Minecraft fullscreen, and the launch indicator. The instance wallpaper stays visible while a small progress indicator shows preparation, downloads, and Minecraft startup.
 
 Click a wallpaper card to open its details and Play button. Right-click a card for Play, Edit Instance, Mods, Packs & Shaders, and wallpaper options. The content manager can add local files or browse compatible Modrinth projects. Use the arrow keys to select an instance or the create tile, Return to open it or play from instance details, Shift-F10 for options, and Escape to dismiss the panel.
 
