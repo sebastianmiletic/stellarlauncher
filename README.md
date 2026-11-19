@@ -18,6 +18,8 @@ Stellar Launcher is a compact Minecraft Java launcher for macOS based on Prism L
 
 The gallery and Minecraft launch engine run in one Qt application. Stellar uses its own library under `~/Library/Application Support/Stellar Launcher`.
 
+![The instance details view with wallpaper, Play, game version, loader and playtime](tools/stellar-prism/screenshots/instance-details.png)
+
 Scroll past the last wallpaper card to **Create New Instance**, or press Command-N. The quick creator offers Vanilla and Fabric. **More Options** opens snapshots, other loaders, and modpacks. Right-click the create tile for **Import Instance** or **Copy Existing Instance** to bring over existing instances and worlds. Use **Minecraft Accounts** to add, switch, or remove Microsoft accounts. Online sign-in requires a Minecraft-approved Stellar application ID as described above. **Change Skin** opens the in-app editor for the signed-in Microsoft account.
 
 **Settings** in the gallery’s right-click panel (Command-comma) controls the opening animation, Minecraft fullscreen, and the launch wallpaper transition. The instance wallpaper stays visible while a small progress indicator shows preparation, downloads, and Minecraft startup.
