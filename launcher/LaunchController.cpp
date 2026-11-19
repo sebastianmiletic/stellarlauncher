@@ -269,6 +269,7 @@ void LaunchController::login()
                                configured ? tr("Sign in with a Microsoft account that owns Minecraft: Java Edition.")
                                           : tr("Set up Stellar’s Microsoft application ID to sign in and play Minecraft: Java Edition."),
                                QMessageBox::Cancel, m_parentWidget);
+            choice.setWindowFlag(Qt::FramelessWindowHint);
             auto* signIn = choice.addButton(configured ? tr("Sign in") : tr("Set up Microsoft sign-in…"), QMessageBox::AcceptRole);
             QPushButton* demo = nullptr;
             if (m_instance->supportsDemo() && !m_targetToJoin) {

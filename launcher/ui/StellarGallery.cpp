@@ -891,6 +891,10 @@ void StellarGallery::finishLaunch()
 
 void StellarGallery::keyPressEvent(QKeyEvent* event)
 {
+    if (m_panel) {
+        QWidget::keyPressEvent(event);
+        return;
+    }
     switch (event->key()) {
     case Qt::Key_Left:
     case Qt::Key_Right:
@@ -1610,7 +1614,18 @@ void StellarGallery::showWallpapers(const QString& instance)
     connect(refreshTimer, &QTimer::timeout, panel, populate);
     refreshTimer->start(350);
     const auto selected = APPLICATION->settings()->get("StellarWallpaperCovers").toMap().value(instance).toString();
-    const auto collection = activeShuffle.isEmpty() ? QFileInfo(selected).dir().dirName() : activeShuffle;
+    auto collection = activeShuffle.isEmpty() ? QFileInfo(selected).dir().dirName() : activeShuffle;
+    if (selected.isEmpty() && activeShuffle.isEmpty()) {
+        if (const auto* current = APPLICATION->instances()->getInstanceById(instance)) {
+            const auto version = versionOf(current).minecraft;
+            for (const auto& candidate : std::as_const(m_collections)) {
+                if (candidate.versions.contains(version)) {
+                    collection = candidate.id;
+                    break;
+                }
+            }
+        }
+    }
     for (int i = 0; i < m_collections.size(); ++i) {
         if (m_collections.at(i).id == collection) {
             collections->setCurrentIndex(i);
