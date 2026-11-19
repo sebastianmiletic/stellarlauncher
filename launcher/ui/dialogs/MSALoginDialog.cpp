@@ -40,7 +40,9 @@
 
 #include "ui_MSALoginDialog.h"
 
+#include "Application.h"
 #include "DesktopServices.h"
+#include "minecraft/auth/AccountList.h"
 #include "minecraft/auth/AuthFlow.h"
 
 #include <QApplication>
@@ -251,4 +253,24 @@ MinecraftAccountPtr MSALoginDialog::newAccount(QWidget* parent)
         return dlg.m_account;
     }
     return nullptr;
+}
+
+MinecraftAccountPtr MSALoginDialog::addAccount(QWidget* parent)
+{
+    if (!APPLICATION->capabilities().testFlag(Application::SupportsMSA)) {
+        APPLICATION->ShowGlobalSettings(parent, "apis");
+        if (!APPLICATION->capabilities().testFlag(Application::SupportsMSA)) {
+            return nullptr;
+        }
+    }
+
+    auto account = newAccount(parent);
+    if (account) {
+        auto* accounts = APPLICATION->accounts();
+        accounts->addAccount(account);
+        if (!accounts->defaultAccount()) {
+            accounts->setDefaultAccount(account);
+        }
+    }
+    return account;
 }

@@ -61,7 +61,8 @@ APIPage::APIPage(QWidget* parent) : QWidget(parent), ui(new Ui::APIPage)
 
     static const QRegularExpression s_validUrlRegExp("https?://.+");
     static const QRegularExpression s_validMSAClientID(
-        QRegularExpression::anchoredPattern("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"));
+        QRegularExpression::anchoredPattern("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"),
+        QRegularExpression::CaseInsensitiveOption);
 
     ui->setupUi(this);
 
@@ -163,7 +164,7 @@ void APIPage::applySettings()
     s->set("PastebinType", ui->pasteTypeComboBox->currentData().toInt());
     s->set("PastebinCustomAPIBase", ui->baseURLEntry->text());
 
-    QString msaClientID = ui->msaClientID->text();
+    QString msaClientID = ui->msaClientID->text().trimmed();
     s->set("MSAClientIDOverride", msaClientID);
     QUrl metaURL(ui->metaURL->text());
     QUrl resourceURL(ui->resourceURL->text());

@@ -94,24 +94,6 @@ void LaunchController::decideAccount()
         m_accountToUse = accounts->at(instanceAccountIndex);
     }
 
-    if (!accounts->anyAccountIsValid()) {
-        // Tell the user they need to log in at least one account in order to play.
-        auto reply = CustomMessageBox::selectable(m_parentWidget, tr("No Accounts"),
-                                                  tr("In order to play Minecraft, you must have at least one Microsoft "
-                                                     "account which owns Minecraft logged in. "
-                                                     "Would you like to open the account manager to add an account now?"),
-                                                  QMessageBox::Information, QMessageBox::Yes | QMessageBox::No)
-                         ->exec();
-
-        if (reply == QMessageBox::Yes) {
-            // Open the account manager.
-            APPLICATION->ShowGlobalSettings(m_parentWidget, "accounts");
-        } else if (reply == QMessageBox::No) {
-            // Do not open "profile select" dialog.
-            return;
-        }
-    }
-
     if (!m_accountToUse && accounts->anyAccountIsValid()) {
         // If no default account is set, ask the user which one to use.
         ProfileSelectDialog selectDialog(tr("Which account would you like to use?"), ProfileSelectDialog::GlobalDefaultCheckbox,
@@ -279,7 +261,39 @@ QString LaunchController::askOfflineName(const QString& playerName, bool* ok)
 
 void LaunchController::login()
 {
-    decideAccount();
+    if (m_wantedLaunchMode != LaunchMode::Demo) {
+        if (!m_accountToUse && !APPLICATION->accounts()->anyAccountIsValid()) {
+            const bool configured = APPLICATION->capabilities().testFlag(Application::SupportsMSA);
+            QMessageBox choice(QMessageBox::Information, tr("Play Minecraft: Java Edition"),
+                               configured ? tr("Sign in with a Microsoft account that owns Minecraft: Java Edition.")
+                                          : tr("Full Minecraft requires an approved Microsoft application ID for Stellar Launcher. Enter it in Services to continue with sign-in."),
+                               QMessageBox::Cancel, m_parentWidget);
+            auto* signIn = choice.addButton(configured ? tr("Sign in") : tr("Set up Microsoft sign-in…"), QMessageBox::AcceptRole);
+            QPushButton* demo = nullptr;
+            if (m_instance->supportsDemo() && !m_targetToJoin) {
+                demo = choice.addButton(tr("Play Demo"), QMessageBox::ActionRole);
+            }
+            choice.exec();
+            if (choice.clickedButton() == signIn) {
+                m_accountToUse = MSALoginDialog::addAccount(m_parentWidget);
+                if (!m_accountToUse) {
+                    emitAborted();
+                    return;
+                }
+            } else if (demo && choice.clickedButton() == demo) {
+                m_wantedLaunchMode = LaunchMode::Demo;
+            } else {
+                emitAborted();
+                return;
+            }
+        } else {
+            decideAccount();
+            if (!m_accountToUse) {
+                emitAborted();
+                return;
+            }
+        }
+    }
 
     LaunchDecision decision = decideLaunchMode();
     while (decision == LaunchDecision::Undecided) {

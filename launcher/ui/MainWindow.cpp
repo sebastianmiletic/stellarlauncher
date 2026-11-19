@@ -54,7 +54,6 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <QVariant>
-#include <QtAlgorithms>
 
 #include <QAction>
 #include <QActionGroup>
@@ -65,7 +64,6 @@
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QProcess>
-#include "settings/INIFile.h"
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMainWindow>
@@ -73,7 +71,6 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QProgressDialog>
-#include <QPushButton>
 #include <QShortcut>
 #include <QStatusBar>
 #include <QTextEdit>
@@ -202,26 +199,6 @@ void installStellarLook(QWidget* parent, const QDir& game)
                              QObject::tr("In Minecraft Java 1.21.9 through 26.3, open Options → Resource Packs and enable Stellar Look."));
 }
 
-#ifdef Q_OS_MACOS
-QString prismExecutable()
-{
-    const auto bundle = QStringLiteral("Prism Launcher.app/Contents/MacOS/prismlauncher");
-    const auto systemBinary = "/Applications/" + bundle;
-    const auto userBinary = QDir::home().filePath("Applications/" + bundle);
-    for (const auto& path : { systemBinary, userBinary }) {
-        const QFileInfo file(path);
-        if (file.isFile() && file.isExecutable()) {
-            return path;
-        }
-    }
-    return {};
-}
-
-QString prismDataPath()
-{
-    return QDir::home().filePath("Library/Application Support/PrismLauncher");
-}
-#endif
 }  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWindow)
@@ -308,118 +285,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         exportInstanceMenu->addAction(ui->actionExportInstanceFlamePack);
         ui->actionExportInstance->setMenu(exportInstanceMenu);
     }
-
-#ifdef Q_OS_MACOS
-    auto* prismMenu = new QMenu(tr("Play with Prism"), ui->fileMenu);
-    ui->fileMenu->insertMenu(ui->actionKillInstance, prismMenu);
-    connect(prismMenu, &QMenu::aboutToShow, this, [this, prismMenu] {
-        qDeleteAll(prismMenu->findChildren<QMenu*>(QString(), Qt::FindDirectChildrenOnly));
-        prismMenu->clear();
-        const QDir data(prismDataPath());
-        const auto executable = prismExecutable();
-        if (executable.isEmpty()) {
-            prismMenu->addAction(tr("Prism Launcher is not installed"))->setEnabled(false);
-            return;
-        }
-
-        INIFile settings;
-        settings.loadFile(data.filePath("prismlauncher.cfg"));
-        QStringList roots = { settings.value("InstanceDir", "instances").toString() };
-        roots.append(settings.value("AdditionalInstanceDirs").toStringList());
-        QSet<QString> ids;
-        auto* worldsMenu = new QMenu(tr("Open a saved world"), prismMenu);
-        auto* looksMenu = new QMenu(tr("Install Stellar Look"), prismMenu);
-        const auto launch = [this, executable, data](const QDir& game, QStringList args) {
-            args.prepend(data.absolutePath());
-            args.prepend("--dir");
-            watchGameLaunch(game.absolutePath());
-            if (!QProcess::startDetached(executable, args)) {
-                stopWatchingGameLaunch();
-                QMessageBox::warning(this, tr("Could not start Prism Launcher"), tr("Open Prism Launcher and try launching the instance there."));
-            }
-        };
-        for (const auto& root : roots) {
-            if (root.isEmpty()) {
-                continue;
-            }
-            const QDir instances(data.absoluteFilePath(root));
-            for (const auto& entry : instances.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::IgnoreCase)) {
-                const auto id = entry.fileName();
-                if (ids.contains(id) || id.startsWith('.')) {
-                    continue;
-                }
-                INIFile instance;
-                if (!instance.loadFile(QDir(entry.absoluteFilePath()).filePath("instance.cfg"))) {
-                    continue;
-                }
-                ids.insert(id);
-                QString name = instance.value("name", id).toString();
-                const QDir instanceDir(entry.absoluteFilePath());
-                const auto minecraft = instanceDir.filePath("minecraft");
-                const auto dotMinecraft = instanceDir.filePath(".minecraft");
-                const QDir game(!QFileInfo::exists(minecraft) && QFileInfo(dotMinecraft).isDir() ? dotMinecraft : minecraft);
-                auto* action = prismMenu->addAction(name);
-                action->setToolTip(tr("Launch %1 in Prism using its selected account").arg(id));
-                connect(action, &QAction::triggered, this, [launch, game, id] { launch(game, { "--launch", id }); });
-
-                auto* look = looksMenu->addAction(name);
-                connect(look, &QAction::triggered, this, [this, game] { installStellarLook(this, game); });
-
-                const QDir saves(game.filePath("saves"));
-                QMenu* instanceWorlds = nullptr;
-                for (const auto& world : saves.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::IgnoreCase)) {
-                    if (!QFileInfo(QDir(world.absoluteFilePath()).filePath("level.dat")).isFile()) {
-                        continue;
-                    }
-                    if (!instanceWorlds) {
-                        instanceWorlds = worldsMenu->addMenu(name);
-                    }
-                    const auto folder = world.fileName();
-                    auto* playWorld = instanceWorlds->addAction(folder);
-                    connect(playWorld, &QAction::triggered, this, [launch, game, id, folder] { launch(game, { "--launch", id, "--world", folder }); });
-                }
-            }
-        }
-        if (ids.empty()) {
-            prismMenu->addAction(tr("No Prism instances found"))->setEnabled(false);
-        }
-        prismMenu->addSeparator();
-        if (worldsMenu->isEmpty()) {
-            worldsMenu->addAction(tr("No saved worlds found"))->setEnabled(false);
-        }
-        prismMenu->addMenu(worldsMenu);
-        if (looksMenu->isEmpty()) {
-            looksMenu->addAction(tr("No Prism instances found"))->setEnabled(false);
-        }
-        prismMenu->addMenu(looksMenu);
-        auto* importPrism = prismMenu->addAction(tr("Import selected Stellar instance into Prism…"));
-        importPrism->setEnabled(m_selectedInstance && !m_selectedInstance->isRunning());
-        connect(importPrism, &QAction::triggered, this, [this, executable, data] {
-            if (!m_selectedInstance || m_selectedInstance->isRunning()) {
-                return;
-            }
-            ExportInstanceDialog dialog(m_selectedInstance, this);
-            dialog.setWindowTitle(tr("Export a copy for Prism Launcher"));
-            if (dialog.exec() != QDialog::Accepted || dialog.exportedPath().isEmpty()) {
-                return;
-            }
-
-            const auto url = QUrl::fromLocalFile(dialog.exportedPath()).toString(QUrl::FullyEncoded);
-            if (!QProcess::startDetached(executable, { "--dir", data.absolutePath(), "--import", url })) {
-                QMessageBox::warning(this, tr("Could not start Prism Launcher"),
-                                     tr("The ZIP was saved. Open Prism Launcher and import it from Add Instance."));
-            }
-        });
-
-        prismMenu->addSeparator();
-        auto* openPrism = prismMenu->addAction(tr("Open Prism Launcher"));
-        connect(openPrism, &QAction::triggered, this, [this, executable, data] {
-            if (!QProcess::startDetached(executable, { "--dir", data.absolutePath(), "--show-window" })) {
-                QMessageBox::warning(this, tr("Could not start Prism Launcher"), tr("Open Prism Launcher from Applications."));
-            }
-        });
-    });
-#endif
 
     auto* archiveLook = new QAction(tr("Install Stellar Look for selected instance"), ui->fileMenu);
     ui->fileMenu->insertAction(ui->actionKillInstance, archiveLook);
@@ -929,21 +794,7 @@ void MainWindow::repopulateAccountsMenu()
     ui->accountsMenu->addAction(ui->actionManageSkins);
     auto* addAccount = new QAction(tr("Add Microsoft account…"), accountsButtonMenu);
     addAccount->setIcon(accountIcon());
-    connect(addAccount, &QAction::triggered, this, [this] {
-        if (!APPLICATION->capabilities().testFlag(Application::SupportsMSA)) {
-            QMessageBox::information(this, tr("Set up Microsoft sign-in"),
-                                     tr("Enter Stellar Launcher’s Microsoft application ID in Services to enable sign-in."));
-            APPLICATION->ShowGlobalSettings(this, "apis");
-            return;
-        }
-        if (auto account = MSALoginDialog::newAccount(this)) {
-            auto* accounts = APPLICATION->accounts();
-            accounts->addAccount(account);
-            if (!accounts->defaultAccount()) {
-                accounts->setDefaultAccount(account);
-            }
-        }
-    });
+    connect(addAccount, &QAction::triggered, this, [this] { MSALoginDialog::addAccount(this); });
     ui->accountsMenu->addAction(addAccount);
     ui->accountsMenu->addAction(ui->actionManageAccounts);
 
@@ -1882,7 +1733,7 @@ void MainWindow::instanceActivated(QModelIndex index)
         }
         return;
     }
-    launchFromWindow(inst);
+    APPLICATION->launch(inst);
 }
 
 QTimer* MainWindow::watchGameLaunch(const QString& gameRoot)
@@ -1943,43 +1794,10 @@ void MainWindow::stopWatchingGameLaunch()
     view->setLaunchWallpaperVisible(false);
 }
 
-void MainWindow::launchFromWindow(MinecraftInstance* inst)
-{
-#ifdef Q_OS_MACOS
-    const auto* accounts = APPLICATION->accounts();
-    bool ownsJava = false;
-    for (int i = 0; i < accounts->count(); ++i) {
-        if (const auto account = accounts->at(i); account && account->ownsMinecraft()) {
-            ownsJava = true;
-            break;
-        }
-    }
-    const auto executable = prismExecutable();
-    if (!ownsJava && !executable.isEmpty()) {
-        QMessageBox choice(QMessageBox::Question, tr("Play Minecraft: Java Edition"),
-                           tr("Use your signed-in Prism account to play the full game. Choose an instance in Prism, or use File → Play with Prism to import the selected Stellar instance and open saved worlds."),
-                           QMessageBox::Cancel, this);
-        auto* playWithPrism = choice.addButton(tr("Open Prism Launcher"), QMessageBox::AcceptRole);
-        auto* otherOptions = choice.addButton(tr("Stellar launch options…"), QMessageBox::ActionRole);
-        choice.exec();
-        if (choice.clickedButton() == playWithPrism) {
-            if (!QProcess::startDetached(executable, { "--dir", prismDataPath(), "--show-window" })) {
-                QMessageBox::warning(this, tr("Could not start Prism Launcher"), tr("Open Prism Launcher from Applications."));
-            }
-            return;
-        }
-        if (choice.clickedButton() != otherOptions) {
-            return;
-        }
-    }
-#endif
-    APPLICATION->launch(inst);
-}
-
 void MainWindow::on_actionLaunchInstance_triggered()
 {
     if (m_selectedInstance && !m_selectedInstance->isRunning()) {
-        launchFromWindow(m_selectedInstance);
+        APPLICATION->launch(m_selectedInstance);
     }
 }
 

@@ -56,6 +56,11 @@ void LauncherLoginStep::onRequestDone(QByteArray* response)
     qCDebug(authCredentials()) << *response;
     if (m_request->error() != QNetworkReply::NoError) {
         qWarning() << "Reply error:" << m_request->error();
+        if (m_request->replyStatusCode() == 403 && response->toLower().contains("invalid app registration")) {
+            emit finished(AccountTaskState::STATE_FAILED_SOFT,
+                          tr("Minecraft Services did not approve this application ID. Submit Stellar Launcher’s app registration for Minecraft API access."));
+            return;
+        }
         if (Net::isApplicationError(m_request->error()) && !Net::isServerError(m_request->error())) {
             emit finished(AccountTaskState::STATE_FAILED_SOFT,
                           tr("Failed to get Minecraft access token: %1").arg(m_request->errorString()));

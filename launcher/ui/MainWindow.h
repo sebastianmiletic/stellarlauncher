@@ -229,7 +229,6 @@ class MainWindow : public QMainWindow {
     void setSelectedInstanceById(const QString& id);
     void updateStatusCenter();
     void setInstanceActionsEnabled(bool enabled);
-    void launchFromWindow(MinecraftInstance* inst);
     QTimer* watchGameLaunch(const QString& gameRoot);
     void stopWatchingGameLaunch();
 

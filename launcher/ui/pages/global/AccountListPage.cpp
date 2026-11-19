@@ -86,7 +86,7 @@ AccountListPage::AccountListPage(QWidget* parent) : QMainWindow(parent), ui(new 
 
     // Xbox authentication won't work without a client identifier, so disable the button if it is missing
     if (~APPLICATION->capabilities() & Application::SupportsMSA) {
-        auto* notice = new QLabel(tr("Microsoft sign-in is not configured in this development build."), this);
+        auto* notice = new QLabel(tr("Configure Stellar Launcher’s approved Microsoft application ID under Services to enable sign-in."), this);
         notice->setWordWrap(true);
         ui->listView->setToolTip(notice->text());
         ui->toolBar->insertWidgetBefore(ui->actionAddMicrosoft, notice);
@@ -134,13 +134,7 @@ void AccountListPage::listChanged()
 
 void AccountListPage::on_actionAddMicrosoft_triggered()
 {
-    auto account = MSALoginDialog::newAccount(this);
-    if (account) {
-        m_accounts->addAccount(account);
-        if (m_accounts->count() == 1) {
-            m_accounts->setDefaultAccount(account);
-        }
-    }
+    MSALoginDialog::addAccount(this);
 }
 
 void AccountListPage::on_actionAddOffline_triggered()
