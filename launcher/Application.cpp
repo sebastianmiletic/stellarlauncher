@@ -837,11 +837,12 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("InstRenamingMode", "AskEverytime");
         m_settings->registerSetting("EditInstanceOnDoubleClick", false);
         m_settings->registerSetting("SelectedInstance", QString());
-        m_settings->registerSetting("StellarLaunchAnimation", "progress");
+        m_settings->registerSetting("StellarLaunchAnimation", "wave");
         m_settings->registerSetting("StellarFillScreen", false);
         m_settings->registerSetting("StellarOpeningAnimation", true);
         m_settings->registerSetting("StellarMotion", true);
         m_settings->registerSetting("StellarWallpaperCovers", QVariantMap{});
+        m_settings->registerSetting("StellarWallpaperShuffle", QVariantMap{});
 #ifdef Q_OS_MACOS
         m_settings->registerSetting("StellarImportedGalleryPreferences", false);
         const auto previousRoot = QDir::home().filePath("Library/Application Support/Stellar Launcher");

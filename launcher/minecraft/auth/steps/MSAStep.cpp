@@ -36,93 +36,20 @@
 #include "MSAStep.h"
 
 #include <QAbstractOAuth2>
-#include <QNetworkRequest>
-#include <QNetworkReply>
+#include <QHostAddress>
 #include <QOAuthHttpServerReplyHandler>
-#include <QOAuthOobReplyHandler>
 
 #include "Application.h"
-#include "BuildConfig.h"
-#include "FileSystem.h"
-
-#include <QProcess>
-#include <QSettings>
-#include <QStandardPaths>
-
-bool isSchemeHandlerRegistered()
-{
-#ifdef Q_OS_LINUX
-    QProcess process;
-    process.start("xdg-mime", { "query", "default", "x-scheme-handler/" + BuildConfig.LAUNCHER_APP_BINARY_NAME });
-    process.waitForFinished();
-    QString output = process.readAllStandardOutput().trimmed();
-
-    return output.contains(APPLICATION->desktopFileName());
-
-#elif defined(Q_OS_WIN)
-    QString regPath = QString("HKEY_CURRENT_USER\\Software\\Classes\\%1").arg(BuildConfig.LAUNCHER_APP_BINARY_NAME);
-    QSettings settings(regPath, QSettings::NativeFormat);
-
-    const QString registeredRunCommand = settings.value("shell/open/command/.").toString().replace("\\", "/");
-    return registeredRunCommand.contains(QCoreApplication::applicationFilePath());
-#endif
-    return true;
-}
-
-class CustomOAuthOobReplyHandler : public QOAuthOobReplyHandler {
-    Q_OBJECT
-
-   public:
-    explicit CustomOAuthOobReplyHandler(QObject* parent = nullptr) : QOAuthOobReplyHandler(parent)
-    {
-        connect(APPLICATION, &Application::oauthReplyRecieved, this, &QOAuthOobReplyHandler::callbackReceived);
-    }
-    ~CustomOAuthOobReplyHandler() override
-    {
-        disconnect(APPLICATION, &Application::oauthReplyRecieved, this, &QOAuthOobReplyHandler::callbackReceived);
-    }
-    QString callback() const override { return BuildConfig.LAUNCHER_APP_BINARY_NAME + "://oauth/microsoft"; }
-
-   protected:
-    void networkReplyFinished(QNetworkReply* reply) override
-    {
-        if (reply->error() != QNetworkReply::NoError) {
-            qWarning() << "OAuth2 request failed:" << reply->readAll();
-        }
-
-        QOAuthOobReplyHandler::networkReplyFinished(reply);
-    }
-};
-
-class LoggingOAuthHttpServerReplyHandler final : public QOAuthHttpServerReplyHandler {
-    Q_OBJECT
-
-   public:
-    explicit LoggingOAuthHttpServerReplyHandler(QObject* parent = nullptr) : QOAuthHttpServerReplyHandler(parent) {}
-
-   protected:
-    void networkReplyFinished(QNetworkReply* reply) override
-    {
-        if (reply->error() != QNetworkReply::NoError) {
-            qWarning() << "OAuth2 request failed:" << reply->readAll();
-        }
-
-        QOAuthHttpServerReplyHandler::networkReplyFinished(reply);
-    }
-};
 
 MSAStep::MSAStep(AccountData* data, bool silent) : AuthStep(data), m_silent(silent)
 {
     m_clientId = APPLICATION->getMSAClientID();
-    if (QCoreApplication::applicationFilePath().startsWith("/tmp/.mount_") || APPLICATION->isPortable() || !isSchemeHandlerRegistered())
-
-    {
-        auto replyHandler = new LoggingOAuthHttpServerReplyHandler(this);
-        replyHandler->setCallbackText(tr("Microsoft sign-in is complete. Return to Stellar Launcher."));
-        m_oauth2.setReplyHandler(replyHandler);
-    } else {
-        m_oauth2.setReplyHandler(new CustomOAuthOobReplyHandler(this));
-    }
+    auto* replyHandler = new QOAuthHttpServerReplyHandler(this);
+    replyHandler->close();
+    replyHandler->setCallbackHost(QStringLiteral("localhost"));
+    replyHandler->setCallbackText(tr("Microsoft sign-in is complete. Return to Stellar Launcher."));
+    m_oauth2.setReplyHandler(replyHandler);
+    m_oauth2.setPkceMethod(QOAuth2AuthorizationCodeFlow::PkceMethod::S256);
     m_oauth2.setAuthorizationUrl(QUrl("https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize"));
     m_oauth2.setAccessTokenUrl(QUrl("https://login.microsoftonline.com/consumers/oauth2/v2.0/token"));
     m_oauth2.setScope("XboxLive.SignIn XboxLive.offline_access");
@@ -188,13 +115,20 @@ void MSAStep::perform()
         m_oauth2.setRefreshToken(m_data->msaToken.refresh_token);
         m_oauth2.refreshAccessToken();
     } else {
+        auto* callback = static_cast<QOAuthHttpServerReplyHandler*>(m_oauth2.replyHandler());
+        if (!callback->listen(QHostAddress::LocalHost)) {
+            emit finished(AccountTaskState::STATE_FAILED_HARD,
+                          tr("Cannot open the local sign-in callback. You can still use the device code."));
+            return;
+        }
         m_oauth2.setModifyParametersFunction(
-            [](QAbstractOAuth::Stage stage, QMultiMap<QString, QVariant>* map) { map->insert("prompt", "select_account"); });
+            [](QAbstractOAuth::Stage stage, QMultiMap<QString, QVariant>* map) {
+                if (stage == QAbstractOAuth::Stage::RequestingAuthorization)
+                    map->insert("prompt", "select_account");
+            });
 
         *m_data = AccountData();
         m_data->msaClientID = m_clientId;
         m_oauth2.grant();
     }
 }
-
-#include "MSAStep.moc"

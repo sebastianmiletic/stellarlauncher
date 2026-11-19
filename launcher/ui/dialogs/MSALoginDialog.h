@@ -31,6 +31,7 @@ class MSALoginDialog : public QDialog {
    public:
     ~MSALoginDialog();
 
+    static bool configureMicrosoftApplication(QWidget* parent);
     static MinecraftAccountPtr newAccount(QWidget* parent);
     static MinecraftAccountPtr addAccount(QWidget* parent);
     int exec() override;

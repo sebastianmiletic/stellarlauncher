@@ -53,6 +53,7 @@
 InstanceWindow::InstanceWindow(MinecraftInstance* instance, QWidget* parent) : QMainWindow(parent), m_instance(instance)
 {
     setAttribute(Qt::WA_DeleteOnClose);
+    setWindowFlag(Qt::FramelessWindowHint);
 
     auto icon = APPLICATION->icons()->getIcon(m_instance->iconKey());
     QString windowTitle = tr("Console window for ") + m_instance->name();
@@ -74,7 +75,7 @@ InstanceWindow::InstanceWindow(MinecraftInstance* instance, QWidget* parent) : Q
 
     // Add custom buttons to the page container layout.
     {
-        auto horizontalLayout = new QHBoxLayout(this);
+        auto horizontalLayout = new QHBoxLayout;
         horizontalLayout->setObjectName(QStringLiteral("horizontalLayout"));
         horizontalLayout->setContentsMargins(0, 0, 6, 6);
 

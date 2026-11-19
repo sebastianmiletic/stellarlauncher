@@ -1,0 +1,106 @@
+name: Stellar downloads
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stellar-downloads-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: ${{ matrix.platform }} · ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {platform: macOS, arch: arm64, runner: macos-26}
+          - {platform: macOS, arch: x86_64, runner: macos-26-intel}
+          - {platform: Windows, arch: x86_64, runner: windows-2022, qt_arch: win64_msvc2022_64, msvc_arch: amd64, triplet: x64-windows}
+          - {platform: Windows, arch: arm64, runner: windows-11-arm, qt_arch: win64_msvc2022_arm64, msvc_arch: arm64, triplet: arm64-windows}
+          - {platform: Linux, arch: x86_64, runner: ubuntu-24.04, qt_arch: linux_gcc_64}
+          - {platform: Linux, arch: aarch64, runner: ubuntu-24.04-arm, qt_arch: linux_gcc_arm64}
+    defaults:
+      run:
+        shell: bash
+    env:
+      QT_QPA_PLATFORM: offscreen
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+      STELLAR_PLATFORM: ${{ matrix.platform }}
+      STELLAR_ARCH: ${{ matrix.arch }}
+      STELLAR_TRIPLET: ${{ matrix.triplet }}
+      STELLAR_MSA_CLIENT_ID: ${{ vars.STELLAR_MSA_CLIENT_ID }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+          persist-credentials: false
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.11.2'
+          arch: ${{ matrix.qt_arch || 'clang_64' }}
+          modules: qtimageformats qtnetworkauth
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y extra-cmake-modules ninja-build libcmark-dev libqrencode-dev libtomlplusplus-dev libarchive-dev libgl-dev libxcb-cursor0 zlib1g-dev
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: brew install extra-cmake-modules ninja cmark qrencode tomlplusplus libarchive
+
+      - name: Configure
+        run: |
+          options=()
+          case "$RUNNER_OS" in
+            macOS)
+              export PKG_CONFIG_PATH="$(brew --prefix libarchive)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+              options+=("-DCMAKE_OSX_ARCHITECTURES=$STELLAR_ARCH" "-DCMAKE_PREFIX_PATH=$QT_ROOT_DIR;$(brew --prefix)")
+              ;;
+            Windows)
+              options+=("-DCMAKE_TOOLCHAIN_FILE=cmake/vcpkg/scripts/buildsystems/vcpkg.cmake"
+                "-DVCPKG_TARGET_TRIPLET=$STELLAR_TRIPLET" "-DVCPKG_HOST_TRIPLET=$STELLAR_TRIPLET")
+              ;;
+          esac
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/stage" \
+            -DLauncher_BUILD_PLATFORM=stellar-github -DLauncher_ENABLE_JAVA_DOWNLOADER=ON \
+            -DLauncher_USE_PCH=ON -DBUILD_TESTING=ON -DENABLE_LTO=OFF \
+            "-DLauncher_MSA_CLIENT_ID=$STELLAR_MSA_CLIENT_ID" "${options[@]}"
+
+      - name: Build and test
+        run: |
+          cmake --build build --parallel 2
+          ctest --test-dir build --output-on-failure
+
+      - name: Install and package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cmake --install build
+          bash tools/archive/package-desktop.sh
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: StellarLauncher-${{ matrix.platform }}-${{ matrix.arch }}
+          path: downloads/*
+          if-no-files-found: error
+          compression-level: 0

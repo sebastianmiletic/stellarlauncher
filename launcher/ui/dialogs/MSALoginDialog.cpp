@@ -74,12 +74,12 @@ QString formatError(const QString& reason)
     }
     return formatted;
 }
-bool configureMicrosoftApplication(QWidget* parent)
-{
-    if (APPLICATION->capabilities().testFlag(Application::SupportsMSA))
-        return true;
+}  // namespace
 
+bool MSALoginDialog::configureMicrosoftApplication(QWidget* parent)
+{
     QDialog dialog(parent);
+    dialog.setWindowFlag(Qt::FramelessWindowHint);
     dialog.setWindowTitle(QObject::tr("Set Up Microsoft Sign-In"));
     dialog.setMinimumWidth(420);
     auto* layout = new QVBoxLayout(&dialog);
@@ -92,6 +92,7 @@ bool configureMicrosoftApplication(QWidget* parent)
     id->setAccessibleName(QObject::tr("Approved Microsoft application ID"));
     id->setPlaceholderText(QObject::tr("Application (client) ID"));
     id->setClearButtonEnabled(true);
+    id->setText(APPLICATION->getMSAClientID());
     layout->addWidget(id);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
@@ -110,6 +111,8 @@ bool configureMicrosoftApplication(QWidget* parent)
         const auto value = text.trimmed();
         save->setEnabled(canonical.match(value).hasMatch() && !QUuid(value).isNull());
     });
+    save->setEnabled(!QUuid(id->text()).isNull());
+    id->selectAll();
     id->setFocus();
     if (dialog.exec() != QDialog::Accepted || !save->isEnabled())
         return false;
@@ -118,11 +121,11 @@ bool configureMicrosoftApplication(QWidget* parent)
     APPLICATION->updateCapabilities();
     return APPLICATION->capabilities().testFlag(Application::SupportsMSA);
 }
-}  // namespace
 
 MSALoginDialog::MSALoginDialog(QWidget* parent) : QDialog(parent), ui(new Ui::MSALoginDialog)
 {
     ui->setupUi(this);
+    setWindowFlag(Qt::FramelessWindowHint);
 
     // make font monospace
     QFont font;
@@ -304,7 +307,7 @@ void MSALoginDialog::onAuthFlowStatus(QString status)
 // Public interface
 MinecraftAccountPtr MSALoginDialog::newAccount(QWidget* parent)
 {
-    if (!configureMicrosoftApplication(parent))
+    if (!APPLICATION->capabilities().testFlag(Application::SupportsMSA) && !configureMicrosoftApplication(parent))
         return nullptr;
 
     MSALoginDialog dlg(parent);

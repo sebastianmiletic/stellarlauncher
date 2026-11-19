@@ -14,6 +14,7 @@ class QAbstractButton;
 class QFrame;
 class QHBoxLayout;
 class QPropertyAnimation;
+class QPushButton;
 class QScrollArea;
 class QTimer;
 class MinecraftInstance;
@@ -56,6 +57,8 @@ private:
     void finishLaunch();
     void showActions(int index);
     void showPreferences();
+    void showAccounts();
+    void updateAccountIcons();
     void showCreator();
     void showContent(const QString& id);
     void copyInstance();
@@ -63,6 +66,8 @@ private:
     QFrame* makePanel(const QString& title);
     void dismissPanel();
     QStringList images(const Collection& collection) const;
+    QString artworkPath(const QString& instance, const QString& version);
+    QPixmap wallpaperPixmap(const QString& file);
     QPixmap artwork(const QString& instance, const QString& version);
     void fetchArtwork(const Collection& collection);
     void updateArtwork();
@@ -77,6 +82,7 @@ private:
     QTimer* m_launchTimer;
     QTimer* m_saveSelection;
     QMetaObject::Connection m_detailRunningChanged;
+    QPushButton* m_homeAccounts = nullptr;
     QFrame* m_panel = nullptr;
     QWidget* m_detail = nullptr;
     QList<QAbstractButton*> m_tiles;
@@ -87,6 +93,7 @@ private:
     QStringList m_ids;
     QString m_selected;
     QString m_detailId;
+    QString m_detailWallpaper;
     QString m_launching;
     QString m_wallpapers;
     QElapsedTimer m_javaStartup;
