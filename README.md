@@ -1,5 +1,11 @@
 # Stellar Launcher
 
+<img src="tools/stellar-prism/screenshots/stellar-logo.png" width="96" alt="Stellar Launcher logo">
+
+[Download Stellar Launcher for Apple silicon](https://github.com/sebastianmiletic/archivelauncher/releases/tag/stellar-gallery-v1.3.0) · macOS 14 or later
+
+![Stellar's wallpaper gallery with three sample Minecraft instances](tools/stellar-prism/screenshots/gallery.png)
+
 Stellar Launcher is a compact Minecraft Java launcher for macOS based on Prism Launcher. It is an independent fork. It includes Prism’s existing instance and resource managers plus a Stellar theme, live library playtime and a Minecraft version switch that checks matching mods and dependencies.
 
 - **Change Minecraft version** in **Edit → Version**. Select the Minecraft component and choose **Change version**. Review compatible mod downloads after the component change. Stellar reports missing and locked mods so you can review them before launching.
@@ -8,11 +14,21 @@ Stellar Launcher is a compact Minecraft Java launcher for macOS based on Prism L
 - **Stellar Look** adds a fixed black-hole scene with an animated accretion disk on Java 26.3 and grayscale menus to Minecraft Java 1.21.9 through 26.3. Install the pack from File and enable it in Minecraft’s Resource Packs menu. Reinstall Stellar Look from the same menu to refresh an older copy.
 - **Updates** use Sparkle on macOS. Stellar checks in the background on startup when automatic updates are enabled. Updates are installed from signed releases. Private GitHub Releases require authentication, so a private repository needs a separately accessible HTTPS feed and download endpoint for Sparkle.
 
-## Stellar Gallery for Prism
+## Stellar Gallery
 
-The [Stellar Gallery release](https://github.com/sebastianmiletic/archivelauncher/releases/tag/stellar-gallery-v1.2.0) is a compact macOS launcher frontend for Apple silicon. It reads your existing Prism library and fills the rounded window with artwork cards. Double-click a card to play, or right-click it for Play, Edit in Prism, Finder and wallpaper options. Use the arrow keys to select an instance, Return to play and Shift-F10 to open the selected card’s options. Escape dismisses an options sheet. Import is available in the **Library** menu, and Command-W closes the window. Prism handles Java, Microsoft sign-in and mods.
+The gallery app bundles Stellar’s own game engine and uses its own library under `~/Library/Application Support/Stellar Launcher`.
 
-Stellar matches installed Java releases to official artwork where Minecraft publishes a matching collection. Other versions use the general Java Edition art. **Wallpapers** lets you choose another image for the selected instance and save the complete catalogue locally. Wallpaper images download directly from Minecraft and are stored in `~/Library/Application Support/Stellar Gallery/Wallpapers`. The public-facing app archive contains the catalogue and Stellar’s own art.
+Scroll past the last wallpaper card to **Create New Instance**, or press Command-N. The quick creator offers Vanilla and Fabric. **More Options** opens snapshots, other loaders, and modpacks. Use **Library → Copy Existing Instance** to bring over a local instance folder, including its worlds. Use **Minecraft Accounts** to add, switch, or remove Microsoft accounts. Online sign-in requires a Minecraft-approved Stellar application ID as described above. **Change Skin** opens the in-app editor for the signed-in Microsoft account.
+
+**Stellar Launcher → Settings** (Command-comma) controls the opening animation, Minecraft fullscreen, and the launch wallpaper transition. The default animation reveals the instance wallpaper in color from the bottom as the engine prepares Java and Minecraft.
+
+Double-click a wallpaper card to play, or right-click it for Play, Edit Instance, Mods, Packs & Shaders, and wallpaper options. The content manager can add local files or browse compatible Modrinth projects. Use the arrow keys to select an instance or the create tile, Return to activate it, Shift-F10 for options, and Escape to dismiss the panel.
+
+Stellar matches installed Java releases to official artwork where Minecraft publishes a matching collection. **Wallpapers** lets you choose another image for the selected instance and save the catalogue locally. The gallery release uses manual downloads from GitHub.
+
+| Instance options | New instance | Settings |
+| --- | --- | --- |
+| ![Icon-only instance options](tools/stellar-prism/screenshots/instance-options.png) | ![New Instance panel with game version and loader choices](tools/stellar-prism/screenshots/new-instance.png) | ![Animation and fullscreen settings](tools/stellar-prism/screenshots/settings.png) |
 
 The separate [Prism appearance release](https://github.com/sebastianmiletic/archivelauncher/releases/tag/stellar-theme-v1.0.0) contains the portable theme for Prism’s management window.
 
@@ -27,12 +43,13 @@ On Java 26.3, the title screen holds a single black hole in frame while the accr
 Install the dependencies and initialize the git submodule before running the build.
 
 ```sh
-brew install cmake ninja extra-cmake-modules qtbase qtsvg qtnetworkauth cmark qrencode tomlplusplus libarchive openjdk@17
+brew install cmake ninja extra-cmake-modules qtbase qtsvg qtnetworkauth cmark qrencode tomlplusplus libarchive openjdk@17 librsvg
 git submodule update --init --recursive
 ./tools/archive/build-macos.sh
+./tools/stellar-prism/build-macos.sh
 ```
 
-The script builds and tests Stellar and places the signed local app in `../dist/Stellar Launcher.app`. The build accepts `ARCHIVE_MSA_CLIENT_ID`, `ARCHIVE_CURSEFORGE_API_KEY`, `ARCHIVE_UPDATE_FEED_URL` and `ARCHIVE_UPDATE_PUBLIC_KEY`. Set both update variables to empty for a build without Sparkle.
+The first script builds and tests the engine. The second packages the signed gallery with the engine in `../dist/stellar-prism/Stellar Launcher.app`. The build accepts `ARCHIVE_MSA_CLIENT_ID`, `ARCHIVE_CURSEFORGE_API_KEY`, `ARCHIVE_UPDATE_FEED_URL` and `ARCHIVE_UPDATE_PUBLIC_KEY`. Set both update variables to empty for a build without Sparkle.
 
 ## Release on macOS
 

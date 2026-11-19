@@ -36,6 +36,7 @@
 
 #include "LaunchController.h"
 #include "Application.h"
+#include "launch/StellarLaunchProgress.h"
 #include "launch/steps/PrintServers.h"
 #include "minecraft/auth/AccountData.h"
 #include "minecraft/auth/AccountList.h"
@@ -434,6 +435,8 @@ void LaunchController::launchInstance()
 
 void LaunchController::readyForLaunch()
 {
+    const auto progress = m_instance->property("stellarGalleryProgress").toString();
+    StellarLaunchProgress::write(progress, "java " + QByteArray::number(m_launcher->pid()));
     if (!m_profiler) {
         m_launcher->proceed();
         return;
@@ -495,6 +498,21 @@ void LaunchController::onFailed(QString reason)
 
 void LaunchController::onProgressRequested(Task* task) const
 {
+    const auto progressFile = m_instance->property("stellarGalleryProgress").toString();
+    if (!progressFile.isEmpty()) {
+        StellarLaunchProgress::write(progressFile, "download 0");
+        connect(task, &Task::progress, this, [progressFile, lastPercentage = -1](qint64 completed, qint64 total) mutable {
+            if (total <= 0)
+                return;
+            const auto percentage = qRound(qBound(0.0, double(completed) / double(total), 1.0) * 100);
+            if (percentage != lastPercentage) {
+                lastPercentage = percentage;
+                StellarLaunchProgress::write(progressFile, "download " + QByteArray::number(percentage / 100.0));
+            }
+        });
+        m_launcher->proceed();
+        return;
+    }
     if (qobject_cast<MainWindow*>(m_parentWidget) && m_parentWidget->isVisible()) {
         m_launcher->proceed();
         return;

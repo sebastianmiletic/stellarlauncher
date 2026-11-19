@@ -795,6 +795,10 @@ QStringList MinecraftInstance::processMinecraftArgs(AuthSessionPtr session, Mine
         }
     }
 
+    if (session && property("stellarGalleryFullscreen").toBool() && !isLegacy() && !args.contains("--fullscreen")) {
+        args << "--fullscreen";
+    }
+
     QMap<QString, QString> tokenMapping = makeProfileVarMapping(profile);
 
     // yggdrasil!
@@ -855,7 +859,7 @@ QString MinecraftInstance::createLaunchScript(AuthSessionPtr session, MinecraftT
     // window size, title and state, legacy
     {
         QString windowParams;
-        if (settings()->get("LaunchMaximized").toBool()) {
+        if (settings()->get("LaunchMaximized").toBool() || (isLegacy() && property("stellarGalleryFullscreen").toBool())) {
             // FIXME doesn't support maximisation
             if (!isLegacy()) {
                 auto screen = QGuiApplication::primaryScreen();

@@ -53,7 +53,10 @@
 #include "ui/ToolTipFilter.h"
 #include "ui/ViewLogWindow.h"
 
+#include "launch/StellarLaunchProgress.h"
+#include "ui/dialogs/NewInstanceDialog.h"
 #include "ui/dialogs/ProgressDialog.h"
+#include "ui/dialogs/skins/SkinManageDialog.h"
 #include "ui/instanceview/AccessibleInstanceView.h"
 
 #include "ui/pages/BasePageProvider.h"
@@ -329,7 +332,11 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
           { "alive", "Write a small '" + g_liveCheckFile + "' file after the launcher starts" },
           { "show-window", "Show the main launcher window (useful in combination with --launch)" },
           { { "I", "import" }, "Import instance or resource from specified local path or URL", "url" },
-          { "show", "Opens the window for the specified instance (by instance ID)", "show" } });
+          { "show", "Opens the window for the specified instance (by instance ID)", "show" },
+          { "gallery", "Run as the bundled Stellar Gallery engine" },
+          { "gallery-ticket", "Report startup milestones for a Stellar Gallery launch", "ticket" },
+          { "gallery-fullscreen", "Start Minecraft in fullscreen mode" },
+          { "gallery-action", "Open a Stellar Gallery dialog", "create, accounts, skins" } });
     // Has to be positional for some OS to handle that properly
     parser.addPositionalArgument("URL", "Import the resource(s) at the given URL(s) (same as -I / --import)", "[URL...]");
 
@@ -350,6 +357,10 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 
     m_instanceIdToShowWindowOf = parser.value("show");
     m_showMainWindow = parser.isSet("show-window");
+    m_galleryAction = parser.value("gallery-action");
+    m_galleryEngine = parser.isSet("gallery") || !m_galleryAction.isEmpty();
+    setProperty("stellarGalleryTicket", parser.value("gallery-ticket"));
+    setProperty("stellarGalleryFullscreen", parser.isSet("gallery-fullscreen"));
 
     for (const auto& url : parser.values("import")) {
         m_urlsToImport.append(normalizeImportUrl(url));
@@ -463,7 +474,13 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
             bool sentMessage = false;
             int timeout = 2000;
 
-            if (m_instanceIdToLaunch.isEmpty()) {
+            if (!m_galleryAction.isEmpty() || !m_instanceIdToShowWindowOf.isEmpty()) {
+                ApplicationMessage gallery;
+                gallery.command = "gallery";
+                gallery.args.insert("action", m_galleryAction);
+                gallery.args.insert("id", m_instanceIdToShowWindowOf);
+                sentMessage = m_peerInstance->sendMessage(gallery.serialize(), timeout);
+            } else if (m_instanceIdToLaunch.isEmpty()) {
                 ApplicationMessage activate;
                 activate.command = "activate";
                 sentMessage = m_peerInstance->sendMessage(activate.serialize(), timeout);
@@ -480,6 +497,8 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
                 ApplicationMessage launch;
                 launch.command = "launch";
                 launch.args["id"] = m_instanceIdToLaunch;
+                launch.args["gallery_ticket"] = property("stellarGalleryTicket").toString();
+                launch.args["gallery_fullscreen"] = property("stellarGalleryFullscreen").toBool() ? "true" : "false";
 
                 if (!m_serverToJoin.isEmpty()) {
                     launch.args["server"] = m_serverToJoin;
@@ -1260,7 +1279,7 @@ bool Application::createSetupWizard()
     bool pasteInterventionRequired = settings()->get("PastebinURL") != "";
     bool validWidgets = m_themeManager->isValidApplicationTheme(settings()->get("ApplicationTheme").toString());
     bool validIcons = m_themeManager->isValidIconTheme(settings()->get("IconTheme").toString());
-    bool login = !m_accounts->anyAccountIsValid() && (capabilities().testAnyFlags(Application::SupportsMSA));
+    bool login = !m_galleryEngine && !m_accounts->anyAccountIsValid() && (capabilities().testAnyFlags(Application::SupportsMSA));
     bool themeInterventionRequired = !validWidgets || !validIcons;
     bool wizardRequired = javaRequired || languageRequired || pasteInterventionRequired || themeInterventionRequired || askjava || login;
     if (wizardRequired) {
@@ -1322,7 +1341,7 @@ bool Application::createSetupWizard()
 bool Application::updaterEnabled()
 {
 #if defined(Q_OS_MACOS)
-    return BuildConfig.UPDATER_ENABLED;
+    return BuildConfig.UPDATER_ENABLED && !m_galleryEngine;
 #else
     return BuildConfig.UPDATER_ENABLED && QFileInfo(FS::PathCombine(m_rootPath, updaterBinaryName())).isFile();
 #endif
@@ -1390,6 +1409,10 @@ void Application::performMainStartupAction()
                 qDebug() << "   Launching with account" << m_profileToUse;
             }
 
+            if (inst->canLaunch()) {
+                inst->setProperty("stellarGalleryProgress", StellarLaunchProgress::fileFor(property("stellarGalleryTicket").toString()));
+                inst->setProperty("stellarGalleryFullscreen", property("stellarGalleryFullscreen"));
+            }
             launch(inst, m_launchOffline ? LaunchMode::Offline : LaunchMode::Normal, targetToJoin, accountToUse, m_offlineName);
 
             if (!m_showMainWindow) {
@@ -1412,6 +1435,10 @@ void Application::performMainStartupAction()
         QTimer::singleShot(1500, updater, &MacSparkleUpdater::checkOnStartup);
     }
 #endif
+    if (!m_galleryAction.isEmpty() && performGalleryAction(m_galleryAction, {})) {
+        if (shouldExitNow()) exit(0);
+        return;
+    }
     if (!m_mainWindow) {
         // normal main window
         showMainWindow(false);
@@ -1434,6 +1461,50 @@ void Application::performMainStartupAction()
         qDebug() << "<> Importing from url:" << m_urlsToImport;
         m_mainWindow->processURLs(m_urlsToImport);
     }
+}
+
+bool Application::performGalleryAction(const QString& action, const QString& instanceId)
+{
+    if (!instanceId.isEmpty()) {
+        if (auto* instance = instances()->getInstanceById(instanceId)) {
+            showInstanceWindow(instance);
+            return true;
+        }
+        return false;
+    }
+    if (action == "accounts") {
+        ShowGlobalSettings(m_mainWindow, "accounts");
+        return true;
+    }
+    if (action == "create") {
+        NewInstanceDialog dialog({}, {}, {}, m_mainWindow);
+        if (dialog.exec() == QDialog::Accepted) {
+            settings()->set("LastUsedInstDirForNewInstance", dialog.instDir());
+            if (auto* creation = dialog.extractTask()) {
+                unique_qobject_ptr<Task> task(instances()->wrapInstanceTask(creation));
+                ProgressDialog progress(m_mainWindow);
+                progress.execWithTask(task.get());
+                if (task->getState() == Task::State::Failed) {
+                    QMessageBox::critical(m_mainWindow, tr("Couldn’t create instance"), task->failReason());
+                } else if (!task->warnings().isEmpty()) {
+                    QMessageBox::warning(m_mainWindow, tr("Instance created with warnings"), task->warnings().join('\n'));
+                }
+            }
+        }
+        return true;
+    }
+    if (action == "skins") {
+        const auto account = accounts()->defaultAccount();
+        if (!account || account->accountType() != AccountType::MSA || account->isActive()) {
+            QMessageBox::information(m_mainWindow, tr("Minecraft Skin"),
+                                     tr("Sign in to your Microsoft account in Minecraft Accounts before changing your skin."));
+        } else {
+            SkinManageDialog dialog(m_mainWindow, account);
+            dialog.exec();
+        }
+        return true;
+    }
+    return false;
 }
 
 void Application::showFatalErrorMessage(const QString& title, const QString& content)
@@ -1474,6 +1545,8 @@ void Application::messageReceived(const QByteArray& message)
 
     if (command == "activate") {
         showMainWindow();
+    } else if (command == "gallery") {
+        performGalleryAction(received.args.value("action"), received.args.value("id"));
     } else if (command == "import") {
         QString url = received.args["url"];
         if (url.isEmpty()) {
@@ -1520,6 +1593,10 @@ void Application::messageReceived(const QByteArray& message)
             }
         }
 
+        if (instance->canLaunch()) {
+            instance->setProperty("stellarGalleryProgress", StellarLaunchProgress::fileFor(received.args.value("gallery_ticket")));
+            instance->setProperty("stellarGalleryFullscreen", received.args.value("gallery_fullscreen") == "true");
+        }
         launch(instance, offline ? LaunchMode::Offline : LaunchMode::Normal, serverObject, accountObject, offlineName);
     } else {
         qWarning() << "Received invalid message" << message;
@@ -1580,6 +1657,15 @@ bool Application::launch(MinecraftInstance* instance,
             controller->setParentWidget(instance->window());
         } else if (m_mainWindow != nullptr) {
             controller->setParentWidget(m_mainWindow);
+        }
+        const auto progressFile = instance->property("stellarGalleryProgress").toString();
+        if (!progressFile.isEmpty()) {
+            StellarLaunchProgress::write(progressFile, "preparing");
+            connect(controller, &LaunchController::finished, this, [progressFile, controller, instance] {
+                StellarLaunchProgress::write(progressFile, controller->wasSuccessful() ? "ended" : "failed");
+                instance->setProperty("stellarGalleryProgress", {});
+                instance->setProperty("stellarGalleryFullscreen", {});
+            });
         }
         connect(controller, &LaunchController::finished, this, &Application::controllerFinished);
         addRunningInstance();

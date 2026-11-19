@@ -1,9 +1,10 @@
 import AppKit
+import QuartzCore
 import SwiftUI
 
 @MainActor
 final class Stellar: NSObject, NSApplicationDelegate {
-    private let library = PrismLibrary()
+    private let library = StellarLibrary()
     private let wallpapers = WallpaperStore()
     private var window: NSWindow?
     private var keyboardMonitor: Any?
@@ -11,10 +12,13 @@ final class Stellar: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMenu()
         library.refresh()
+        let animate = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion &&
+            !UserDefaults.standard.bool(forKey: "DisableOpeningAnimation")
+        library.opening = animate
 
         let content = NSHostingController(rootView: StellarGallery(library: library, wallpapers: wallpapers))
         let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 818, height: 414),
-                              styleMask: [.titled, .fullSizeContentView, .closable, .miniaturizable, .resizable],
+                              styleMask: [.titled, .fullSizeContentView, .closable, .miniaturizable],
                               backing: .buffered, defer: false)
         window.title = "Stellar Launcher"
         window.appearance = NSAppearance(named: .darkAqua)
@@ -27,19 +31,47 @@ final class Stellar: NSObject, NSApplicationDelegate {
         }
         window.isMovableByWindowBackground = true
         window.contentViewController = content
-        window.contentMinSize = NSSize(width: 610, height: 355)
-        window.setContentSize(NSSize(width: 818, height: 414))
-        window.center()
+        let size = NSSize(width: 818, height: 414)
+        window.contentMinSize = size
+        window.contentMaxSize = size
+        if !window.setFrameUsingName("Stellar Gallery") { window.center() }
+        window.setContentSize(size)
+        window.setFrameAutosaveName("Stellar Gallery")
         self.window = window
         keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let handled = MainActor.assumeIsolated { self?.handleKey(event) == true }
             return handled ? nil : event
         }
+        let destination = window.frame
+        if animate {
+            window.alphaValue = 0
+            window.setFrame(destination.insetBy(dx: 10, dy: 5), display: false)
+        }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        window.orderFrontRegardless()
+        if animate {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                window.animator().setFrame(destination, display: true)
+                window.animator().alphaValue = 1
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) { [weak self] in
+                withAnimation(.easeOut(duration: 0.29)) { self?.library.opening = false }
+            }
+        }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) { library.refresh() }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        if let window {
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            window.makeKeyAndOrderFront(nil)
+        }
+        return true
+    }
 
     func applicationWillTerminate(_ notification: Notification) {
         if let keyboardMonitor { NSEvent.removeMonitor(keyboardMonitor) }
@@ -59,7 +91,7 @@ final class Stellar: NSObject, NSApplicationDelegate {
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
 
         if key == .context && modifiers == .shift && library.panel == nil {
-            library.panel = library.selected == nil ? .library : .instance
+            library.panel = library.selected == nil || library.createFocused ? .library : .instance
             return true
         }
         guard modifiers.isEmpty else { return false }
@@ -77,13 +109,7 @@ final class Stellar: NSObject, NSApplicationDelegate {
             case .escape: library.panel = nil
             case .context: return false
             }
-        case .instance:
-            if key == .escape {
-                library.panel = nil
-            } else {
-                return false
-            }
-        case .library:
+        case .instance, .library, .resources, .create, .settings:
             guard key == .escape else { return false }
             library.panel = nil
         case nil:
@@ -94,8 +120,10 @@ final class Stellar: NSObject, NSApplicationDelegate {
             case .home: library.selectBoundary(last: false)
             case .end: library.selectBoundary(last: true)
             case .enter, .keypadEnter:
-                if !event.isARepeat { library.playSelected() }
-            case .context, .escape: return false
+                if !event.isARepeat { library.activateSelection() }
+            case .escape:
+                return library.dismissLaunch()
+            case .context: return false
             }
         }
         return true
@@ -112,7 +140,11 @@ final class Stellar: NSObject, NSApplicationDelegate {
     }
 
     @objc private func refresh() { library.refresh() }
-    @objc private func openPrism() { library.manage() }
+    @objc private func createInstance() { library.create() }
+    @objc private func copyInstance() { library.copyInstance() }
+    @objc private func accounts() { library.accounts() }
+    @objc private func skins() { library.skins() }
+    @objc private func settings() { library.panel = .settings }
     @objc private func importPack() { library.importPack() }
     @objc private func closeWindow() { window?.close() }
 
@@ -120,6 +152,8 @@ final class Stellar: NSObject, NSApplicationDelegate {
         let main = NSMenu()
         let app = NSMenuItem()
         let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "Settings…", action: #selector(settings), keyEquivalent: ",").target = self
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit Stellar Launcher", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         app.submenu = appMenu
         main.addItem(app)
@@ -127,9 +161,12 @@ final class Stellar: NSObject, NSApplicationDelegate {
         let libraryItem = NSMenuItem(title: "Library", action: nil, keyEquivalent: "")
         let libraryMenu = NSMenu(title: "Library")
         for (title, selector, key) in [
+            ("New Instance…", #selector(createInstance), "n"),
             ("Import Instance…", #selector(importPack), "o"),
+            ("Copy Existing Instance…", #selector(copyInstance), ""),
             ("Refresh Instances", #selector(refresh), "r"),
-            ("Open Prism Launcher", #selector(openPrism), ""),
+            ("Minecraft Accounts…", #selector(accounts), ""),
+            ("Change Skin…", #selector(skins), ""),
         ] {
             libraryMenu.addItem(withTitle: title, action: selector, keyEquivalent: key).target = self
         }

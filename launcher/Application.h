@@ -299,6 +299,9 @@ class Application : public QApplication {
     bool m_liveCheck = false;
     QList<QUrl> m_urlsToImport;
     QString m_instanceIdToShowWindowOf;
+    QString m_galleryAction;
+    bool m_galleryEngine = false;
+    bool performGalleryAction(const QString& action, const QString& instanceId);
     bool m_showMainWindow = false;
     std::unique_ptr<QFile> logFile;
     std::unique_ptr<LogModel> logModel;

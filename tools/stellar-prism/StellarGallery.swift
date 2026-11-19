@@ -7,15 +7,34 @@ private let secondary = Color(white: 0.64)
 private let line = Color.white.opacity(0.12)
 
 struct StellarGallery: View {
-    @ObservedObject var library: PrismLibrary
+    @ObservedObject var library: StellarLibrary
     @ObservedObject var wallpapers: WallpaperStore
+    private enum GalleryTarget { case create }
 
     var body: some View {
         GeometryReader { geometry in
             if library.instances.isEmpty {
-                empty
+                createTile(width: geometry.size.width - 10, height: geometry.size.height - 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay {
+                        RightClickRegion(enabled: library.panel == nil) { library.panel = .library }.accessibilityHidden(true)
+                    }
+                    .accessibilityAction(named: Text("Library options")) { library.panel = .library }
             } else {
                 inventory(size: geometry.size)
+            }
+        }
+        .overlay {
+            if library.opening {
+                ZStack {
+                    canvas
+                    if let icon = NSImage(named: NSImage.applicationIconName) {
+                        Image(nsImage: icon).resizable().scaledToFit().frame(width: 96)
+                    }
+                }
+                .transition(.opacity)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
         }
         .background(canvas)
@@ -23,11 +42,30 @@ struct StellarGallery: View {
         .ignoresSafeArea()
         .foregroundStyle(Color(white: 0.95))
         .preferredColorScheme(.dark)
-        .sheet(isPresented: Binding(
-            get: { library.panel != nil },
-            set: { if !$0 { library.panel = nil } }
+        .overlay(alignment: .top) {
+            WindowDragRegion().frame(height: 7).accessibilityHidden(true)
+        }
+        .overlay {
+            if let launch = library.launchVisual {
+                WallpaperLaunchOverlay(artwork: wallpapers.artwork(for: launch.instance),
+                                       progress: launch.progress, animation: launch.animation)
+                    .transition(.opacity)
+            }
+        }
+        .overlay(alignment: .center) {
+            if library.panel != nil {
+                LibrarySheet(library: library, wallpapers: wallpapers)
+                    .shadow(color: .black.opacity(0.72), radius: 24, y: 10)
+                    .padding(12)
+            }
+        }
+        .alert("Stellar Launcher", isPresented: Binding(
+            get: { !library.notice.isEmpty },
+            set: { if !$0 { library.notice = "" } }
         )) {
-            LibrarySheet(library: library, wallpapers: wallpapers)
+            Button("OK", role: .cancel) { library.notice = "" }
+        } message: {
+            Text(library.notice)
         }
         .task(id: library.instances.map(\.version)) {
             for version in Set(library.instances.map(\.version)) {
@@ -47,19 +85,28 @@ struct StellarGallery: View {
                     ForEach(library.instances) { instance in
                         card(instance, size: CGSize(width: width, height: height)).id(instance.id)
                     }
-                }.padding(gutter)
+                    createTile(width: width, height: height).id(GalleryTarget.create)
+                }
+                .padding(gutter)
+                .background(HorizontalScrollChrome())
             }
-            .scrollIndicators(.hidden)
+            .scrollIndicators(.never, axes: .horizontal)
             .onChange(of: library.selection, initial: true) { _, selected in
-                if let selected { scroll.scrollTo(selected) }
+                if !library.createFocused, let selected { scroll.scrollTo(selected) }
+            }
+            .onChange(of: library.createFocused) { _, focused in
+                if focused { scroll.scrollTo(GalleryTarget.create) }
+                else if let selected = library.selection { scroll.scrollTo(selected) }
             }
         }
     }
 
     private func card(_ instance: GameInstance, size: CGSize) -> some View {
-        let selected = library.selection == instance.id
+        let selected = !library.createFocused && library.selection == instance.id
         return Button {
+            library.createFocused = false
             library.selection = instance.id
+            library.panel = nil
         } label: {
             ZStack(alignment: .bottomLeading) {
                 WallpaperImage(url: wallpapers.artwork(for: instance))
@@ -80,11 +127,12 @@ struct StellarGallery: View {
         }
         .buttonStyle(.plain)
         .simultaneousGesture(TapGesture(count: 2).onEnded {
+            library.createFocused = false
             library.selection = instance.id
-            if library.prism != nil { library.play(instance) }
+            library.play(instance)
         })
         .overlay {
-            RightClickRegion { openActions(for: instance) }.accessibilityHidden(true)
+            RightClickRegion(enabled: library.panel == nil) { openActions(for: instance) }.accessibilityHidden(true)
         }
         .accessibilityLabel(instance.name)
         .accessibilityValue("\(instance.version), \(instance.loader)")
@@ -93,34 +141,72 @@ struct StellarGallery: View {
     }
 
     private func openActions(for instance: GameInstance) {
+        library.createFocused = false
         library.selection = instance.id
         library.panel = .instance
     }
 
-    private var empty: some View {
-        VStack(spacing: 8) {
-            Text(library.prism == nil ? "Install Prism Launcher" : "No instances")
-                .font(.system(size: 20, weight: .semibold))
-            Text(library.prism == nil ? "Prism handles sign-in and game installation." : "Right-click for library options.")
-                .foregroundStyle(secondary)
+    private func createTile(width: CGFloat, height: CGFloat) -> some View {
+        Button {
+            library.createFocused = true
+            library.create()
+        } label: {
+            VStack(spacing: 9) {
+                Image(systemName: "plus").font(.system(size: 24, weight: .light))
+                Text("Create New Instance").font(.system(size: 14, weight: .medium))
+            }
+            .frame(width: width, height: height)
+            .background(Color(white: 0.095), in: RoundedRectangle(cornerRadius: 13))
+            .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(
+                .white.opacity(library.createFocused ? 0.88 : 0.12),
+                lineWidth: library.createFocused ? 2 : 1))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay {
-            RightClickRegion { library.panel = .library }.accessibilityHidden(true)
+        .buttonStyle(.plain)
+    }
+
+}
+
+private struct HorizontalScrollChrome: NSViewRepresentable {
+    func makeNSView(context: Context) -> Region { Region() }
+    func updateNSView(_ view: Region, context: Context) { view.hideIndicator() }
+
+    final class Region: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            hideIndicator()
         }
-        .accessibilityAction(named: Text("Library options")) { library.panel = .library }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        func hideIndicator() {
+            guard let scroll = enclosingScrollView else { return }
+            scroll.hasHorizontalScroller = false
+            scroll.horizontalScroller?.isHidden = true
+        }
+    }
+}
+
+private struct WindowDragRegion: NSViewRepresentable {
+    func makeNSView(context: Context) -> Region { Region() }
+    func updateNSView(_ view: Region, context: Context) {}
+
+    final class Region: NSView {
+        override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
     }
 }
 
 private struct RightClickRegion: NSViewRepresentable {
+    let enabled: Bool
     let action: () -> Void
 
     func makeNSView(context: Context) -> Region { Region() }
 
-    func updateNSView(_ view: Region, context: Context) { view.action = action }
+    func updateNSView(_ view: Region, context: Context) {
+        view.action = enabled ? action : nil
+    }
 
     final class Region: NSView {
-        var action: () -> Void = {}
+        var action: (() -> Void)?
         private var monitor: Any?
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -132,10 +218,10 @@ private struct RightClickRegion: NSViewRepresentable {
             guard window != nil else { return }
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { [weak self] event in
                 let handled = MainActor.assumeIsolated {
-                    guard let self, self.window === event.window,
+                    guard let self, let action = self.action, self.window === event.window,
                           event.type == .rightMouseDown || event.modifierFlags.contains(.control),
                           self.visibleRect.contains(self.convert(event.locationInWindow, from: nil)) else { return false }
-                    self.action()
+                    action()
                     return true
                 }
                 return handled ? nil : event
@@ -145,78 +231,97 @@ private struct RightClickRegion: NSViewRepresentable {
 }
 
 private struct LibrarySheet: View {
-    @ObservedObject var library: PrismLibrary
+    @ObservedObject var library: StellarLibrary
     @ObservedObject var wallpapers: WallpaperStore
 
     var body: some View {
         if library.panel == .wallpapers {
-            WallpaperBrowser(wallpapers: wallpapers, instance: library.selected)
+            WallpaperBrowser(wallpapers: wallpapers, instance: library.selected) { library.panel = nil }
+        } else if library.panel == .create {
+            CreateInstancePanel(library: library)
+        } else if library.panel == .settings {
+            GallerySettings { library.panel = nil }
+        } else if library.panel == .resources, let instance = library.selected {
+            ResourcePanel(instance: instance) { library.panel = nil }.id(instance.id)
         } else {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text(library.panel == .instance ? library.selected?.name ?? "Instance" : "Library")
-                        .font(.system(size: 17, weight: .semibold)).lineLimit(1)
-                    Spacer()
-                    Button("Done") { library.panel = nil }.keyboardShortcut(.cancelAction)
+            VStack(alignment: .leading, spacing: 12) {
+                GalleryPanelHeader(title: library.panel == .instance ? library.selected?.name ?? "Instance" : "Library") {
+                    library.panel = nil
                 }
-                .padding(.horizontal, 16)
-                .frame(height: 49)
-                Rectangle().fill(line).frame(height: 1)
-                VStack(alignment: .leading, spacing: 4) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
                     if library.panel == .instance, let instance = library.selected {
                         action("Play", image: "play.fill") {
                             library.panel = nil
                             library.play(instance)
-                        }.disabled(library.prism == nil)
-                        action("Edit in Prism", image: "slider.horizontal.3") {
+                        }
+                        action("Edit Instance", image: "slider.horizontal.3") {
                             library.panel = nil
                             library.edit(instance)
-                        }.disabled(library.prism == nil)
+                        }
+                        action("Mods, Packs & Shaders", image: "square.stack.3d.up") { library.panel = .resources }
+                        action("Minecraft Accounts", image: "person.crop.circle") {
+                            library.panel = nil
+                            library.accounts()
+                        }
+                        action("Change Skin", image: "person.crop.square") {
+                            library.panel = nil
+                            library.skins()
+                        }
                         action("Show in Finder", image: "folder") {
                             library.panel = nil
                             NSWorkspace.shared.open(instance.folder)
                         }
-                        Rectangle().fill(line).frame(height: 1).padding(.vertical, 4)
                         action("Change Wallpaper", image: "photo") { library.panel = .wallpapers }
                         if wallpapers.hasChoice(for: instance) {
                             action("Use Default Wallpaper", image: "arrow.counterclockwise") {
                                 wallpapers.reset(instance)
                                 library.panel = nil
                             }
+                        } else {
+                            action("Settings", image: "gearshape") { library.panel = .settings }
                         }
                     } else {
+                        action("New Instance", image: "plus") { library.create() }
                         action("Import Instance", image: "square.and.arrow.down") {
                             library.panel = nil
-                            DispatchQueue.main.async { library.importPack() }
-                        }.disabled(library.prism == nil)
-                        action("Open Prism Launcher", image: "arrow.up.right.square") {
+                            library.importPack()
+                        }
+                        action("Copy Existing Instance", image: "square.on.square") {
                             library.panel = nil
-                            library.manage()
+                            library.copyInstance()
+                        }
+                        action("Minecraft Accounts", image: "person.crop.circle") {
+                            library.panel = nil
+                            library.accounts()
                         }
                         action("Wallpapers", image: "photo") { library.panel = .wallpapers }
+                        action("Settings", image: "gearshape") { library.panel = .settings }
                     }
-                }.padding(12)
+                }
             }
-            .background(canvas)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .frame(width: 360)
+            .padding(14)
+            .frame(width: 300)
+            .galleryPanel()
         }
     }
 
     private func action(_ title: String, image: String, perform: @escaping () -> Void) -> some View {
         Button(action: perform) {
             Label(title, systemImage: image)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+                .labelStyle(.iconOnly)
+                .font(.system(size: 17, weight: .medium))
+                .frame(maxWidth: .infinity)
+                .frame(height: 37)
         }
         .buttonStyle(.bordered)
+        .help(title)
     }
 }
 
 private struct WallpaperBrowser: View {
     @ObservedObject var wallpapers: WallpaperStore
     let instance: GameInstance?
-    @Environment(\.dismiss) private var dismiss
+    let dismiss: () -> Void
     private var selected: WallpaperSet? { wallpapers.sets.first { $0.id == wallpapers.collection } }
 
     var body: some View {
@@ -258,7 +363,7 @@ private struct WallpaperBrowser: View {
         }
         .background(canvas)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .frame(width: 620, height: 362)
+        .frame(width: 564, height: 322)
         .onAppear { wallpapers.collection = wallpapers.set(for: instance?.version ?? "")?.id ?? "" }
     }
 
