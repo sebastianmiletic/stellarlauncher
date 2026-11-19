@@ -79,26 +79,17 @@ final class PrismLibrary: ObservableObject {
     }
 
     private func send(_ arguments: [String]) {
-        guard let prism, let executable = Bundle(url: prism)?.executableURL else {
+        guard let prism else {
             notice = "Install Prism Launcher to play or import instances."
             return
         }
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = ["--dir", data.path] + arguments
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        process.terminationHandler = { result in
-            let status = result.terminationStatus
-            if status != 0 {
-                Task { @MainActor in self.notice = "Prism couldn’t complete the action. Open Prism to check its status." }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        configuration.arguments = ["--dir", data.path] + arguments
+        NSWorkspace.shared.openApplication(at: prism, configuration: configuration) { _, error in
+            Task { @MainActor in
+                self.notice = error.map { "Couldn’t open Prism. \($0.localizedDescription)" } ?? ""
             }
-        }
-        do {
-            try process.run()
-            notice = ""
-        } catch {
-            notice = "Couldn’t open Prism. \(error.localizedDescription)"
         }
     }
 

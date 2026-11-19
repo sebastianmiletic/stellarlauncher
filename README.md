@@ -10,7 +10,7 @@ Stellar Launcher is a compact Minecraft Java launcher for macOS based on Prism L
 
 ## Stellar Gallery for Prism
 
-The [Stellar Gallery release](https://github.com/sebastianmiletic/archivelauncher/releases/tag/stellar-gallery-v1.1.0) is a compact macOS launcher frontend for Apple silicon. It reads your existing Prism instance library and displays instances in a single horizontal row. **Play**, **Edit**, **Import**, and **Manage in Prism** use the installed Prism Launcher for Java, Microsoft sign-in and mods.
+The [Stellar Gallery release](https://github.com/sebastianmiletic/archivelauncher/releases/tag/stellar-gallery-v1.1.1) is a compact macOS launcher frontend for Apple silicon. It reads your existing Prism instance library and displays instances in a single horizontal row. **Play**, **Edit**, **Import**, and **Manage in Prism** use the installed Prism Launcher for Java, Microsoft sign-in and mods.
 
 Stellar matches installed Java releases to official artwork where Minecraft publishes a matching collection. Other versions use the general Java Edition art. **Wallpapers** lets you choose another image for the selected instance and save the complete catalogue locally. Wallpaper images download directly from Minecraft and are stored in `~/Library/Application Support/Stellar Gallery/Wallpapers`. The public-facing app archive contains the catalogue and Stellar’s own art.
 
