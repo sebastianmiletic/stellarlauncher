@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
-from PIL import Image, ImageChops
+from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -41,32 +41,24 @@ def png(image):
         return output.getvalue()
 
 
-def panorama():
-    # Four views around the menu camera's orbit. The feathered edges match
-    # the polar faces so adjacent cube faces meet without visible seams.
-    sky = Image.new("L", (FACE_SIZE, FACE_SIZE), 4)
+def write_panorama(write):
+    background = f"{GUI}title/background/"
+    dim = png(Image.new("RGBA", (1, 1), (0, 0, 0, 60)))
+
     with Image.open(WALLPAPER) as wallpaper:
         art = wallpaper.convert("L")
-        art.thumbnail((FACE_SIZE, FACE_SIZE), Image.Resampling.LANCZOS)
-
-    def edge_fade(length, feather):
-        return bytes(round(255 * min(1, min(i, length - 1 - i) / feather)) for i in range(length))
-
-    fade_x = Image.frombytes("L", (art.width, 1), edge_fade(art.width, 320)).resize(art.size)
-    fade_y = Image.frombytes("L", (1, art.height), edge_fade(art.height, 160)).resize(art.size)
-    feather = ImageChops.multiply(fade_x, fade_y)
-    center = ((FACE_SIZE - art.width) // 2, (FACE_SIZE - art.height) // 2 - 35)
-
-    for face, roll in enumerate((0, -12, 9, -5)):
-        image = sky.copy()
-        image.paste(art, center, feather)
-        if roll:
-            image = image.rotate(roll, resample=Image.Resampling.BICUBIC, fillcolor=4)
-        yield face, png(image)
-
-    polar = png(sky)
-    yield 4, polar
-    yield 5, polar
+        # Earlier games use one static, center-framed image as the fallback.
+        write(background + "panorama_overlay.png", png(art.resize((2560, 1440), Image.Resampling.LANCZOS)))
+        # Java 26.3 uses an animated shader and samples the positive Z face.
+        overlay = "stellar_26_3/"
+        face = png(art.resize((FACE_SIZE, FACE_SIZE), Image.Resampling.LANCZOS))
+        plain = png(Image.new("L", (FACE_SIZE, FACE_SIZE), 4))
+        for index in range(6):
+            write(overlay + background + f"panorama_{index}.png", face if index == 0 else plain)
+        write(overlay + background + "panorama_overlay.png", dim)
+        for shader in ("panorama.vsh", "panorama.fsh"):
+            source = Path(__file__).with_name("panorama") / shader
+            write(overlay + "assets/minecraft/shaders/core/" + shader, source.read_bytes())
 
 
 def build():
@@ -78,9 +70,12 @@ def build():
 
         write("pack.mcmeta", json.dumps({
             "pack": {
-                "description": "Stellar Launcher · Event Horizon Panorama",
+                "description": "Stellar Launcher · Event Horizon",
                 "min_format": [69, 0],
                 "max_format": [97, 1],
+            },
+            "overlays": {
+                "entries": [{"directory": "stellar_26_3", "min_format": [97, 1], "max_format": [97, 1]}],
             },
         }, ensure_ascii=False))
         write("pack.png", rasterize(MARK.replace('width="512" height="512"', 'width="128" height="128"')))
@@ -96,10 +91,7 @@ def build():
             write(f"{GUI}title/{name}.png", title_image)
         write(f"{GUI}title/edition.png", rasterize(svg(512, 64, svg_text(57, 45, 32, "#cdcdcd", "MINECRAFT JAVA EDITION"))))
 
-        for face, image in panorama():
-            write(f"{GUI}title/background/panorama_{face}.png", image)
-        # A subtle veil keeps the white menu labels readable over the disk.
-        write(f"{GUI}title/background/panorama_overlay.png", png(Image.new("RGBA", (1, 1), (0, 0, 0, 60))))
+        write_panorama(write)
 
         for name, fill, border in (
             ("button", "#222222", "#626262"),
