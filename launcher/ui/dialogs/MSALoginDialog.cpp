@@ -40,7 +40,6 @@
 
 #include "ui_MSALoginDialog.h"
 
-#include "Application.h"
 #include "DesktopServices.h"
 #include "minecraft/auth/AccountList.h"
 #include "minecraft/auth/AuthFlow.h"
@@ -48,6 +47,12 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QColor>
+#include <QDialogButtonBox>
+#include <QLabel>
+#include <QLineEdit>
+#include <QRegularExpression>
+#include <QUuid>
+#include <QVBoxLayout>
 #include <QPainter>
 #include <QPixmap>
 #include <QSize>
@@ -62,12 +67,56 @@ QString formatError(const QString& reason)
     QString formatted;
     for (const auto& line : reason.split('\n')) {
         if (!line.isEmpty()) {
-            formatted += "<font color='red'>" + line + "</font><br />";
+            formatted += "<font color='#f29292'>" + line + "</font><br />";
         } else {
             formatted += "<br />";
         }
     }
     return formatted;
+}
+bool configureMicrosoftApplication(QWidget* parent)
+{
+    if (APPLICATION->capabilities().testFlag(Application::SupportsMSA))
+        return true;
+
+    QDialog dialog(parent);
+    dialog.setWindowTitle(QObject::tr("Set Up Microsoft Sign-In"));
+    dialog.setMinimumWidth(420);
+    auto* layout = new QVBoxLayout(&dialog);
+    auto* help = new QLabel(QObject::tr("Mojang must approve Stellar’s Microsoft application before it can sign in to Minecraft. "
+                                       "Enter the approved application ID to continue."), &dialog);
+    help->setWordWrap(true);
+    layout->addWidget(help);
+
+    auto* id = new QLineEdit(&dialog);
+    id->setAccessibleName(QObject::tr("Approved Microsoft application ID"));
+    id->setPlaceholderText(QObject::tr("Application (client) ID"));
+    id->setClearButtonEnabled(true);
+    layout->addWidget(id);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
+    auto* learn = buttons->addButton(QObject::tr("Mojang Approval"), QDialogButtonBox::HelpRole);
+    auto* save = buttons->addButton(QObject::tr("Save and Continue"), QDialogButtonBox::AcceptRole);
+    save->setDefault(true);
+    save->setEnabled(false);
+    layout->addWidget(buttons);
+    QObject::connect(learn, &QPushButton::clicked, &dialog, [] {
+        DesktopServices::openUrl(QUrl("https://aka.ms/mce-reviewappid"));
+    });
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    QObject::connect(id, &QLineEdit::textChanged, save, [save](const QString& text) {
+        static const QRegularExpression canonical(R"(^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$)");
+        const auto value = text.trimmed();
+        save->setEnabled(canonical.match(value).hasMatch() && !QUuid(value).isNull());
+    });
+    id->setFocus();
+    if (dialog.exec() != QDialog::Accepted || !save->isEnabled())
+        return false;
+
+    APPLICATION->settings()->set("MSAClientIDOverride", id->text().trimmed());
+    APPLICATION->updateCapabilities();
+    return APPLICATION->capabilities().testFlag(Application::SupportsMSA);
 }
 }  // namespace
 
@@ -98,19 +147,26 @@ MSALoginDialog::MSALoginDialog(QWidget* parent) : QDialog(parent), ui(new Ui::MS
 int MSALoginDialog::exec()
 {
     // Setup the login task and start it
-    m_account = MinecraftAccount::createBlankMSA();
-    m_authflow_task.reset(new AuthFlow(m_account->accountData(), AuthFlow::Action::Login));
+    const auto browserAccount = MinecraftAccount::createBlankMSA();
+    const auto deviceAccount = MinecraftAccount::createBlankMSA();
+    const auto acceptAccount = [this](const MinecraftAccountPtr& account) {
+        if (!m_account) {
+            m_account = account;
+            accept();
+        }
+    };
+    m_authflow_task.reset(new AuthFlow(browserAccount->accountData(), AuthFlow::Action::Login));
     connect(m_authflow_task.get(), &Task::failed, this, &MSALoginDialog::onAuthFlowTaskFailed);
-    connect(m_authflow_task.get(), &Task::succeeded, this, &QDialog::accept);
+    connect(m_authflow_task.get(), &Task::succeeded, this, [acceptAccount, browserAccount] { acceptAccount(browserAccount); });
     connect(m_authflow_task.get(), &Task::aborted, this, &MSALoginDialog::reject);
     connect(m_authflow_task.get(), &Task::status, this, &MSALoginDialog::onAuthFlowStatus);
     connect(m_authflow_task.get(), &AuthFlow::authorizeWithBrowser, this, &MSALoginDialog::authorizeWithBrowser);
     connect(m_authflow_task.get(), &AuthFlow::authorizeWithBrowserWithExtra, this, &MSALoginDialog::authorizeWithBrowserWithExtra);
     connect(ui->buttonBox->button(QDialogButtonBox::Cancel), &QPushButton::clicked, m_authflow_task.get(), &Task::abort);
 
-    m_devicecode_task.reset(new AuthFlow(m_account->accountData(), AuthFlow::Action::DeviceCode));
+    m_devicecode_task.reset(new AuthFlow(deviceAccount->accountData(), AuthFlow::Action::DeviceCode));
     connect(m_devicecode_task.get(), &Task::failed, this, &MSALoginDialog::onDeviceCodeTaskFailed);
-    connect(m_devicecode_task.get(), &Task::succeeded, this, &QDialog::accept);
+    connect(m_devicecode_task.get(), &Task::succeeded, this, [acceptAccount, deviceAccount] { acceptAccount(deviceAccount); });
     connect(m_devicecode_task.get(), &Task::aborted, this, &MSALoginDialog::reject);
     connect(m_devicecode_task.get(), &Task::status, this, &MSALoginDialog::onDeviceFlowStatus);
     connect(m_devicecode_task.get(), &AuthFlow::authorizeWithBrowser, this, &MSALoginDialog::authorizeWithBrowser);
@@ -248,6 +304,9 @@ void MSALoginDialog::onAuthFlowStatus(QString status)
 // Public interface
 MinecraftAccountPtr MSALoginDialog::newAccount(QWidget* parent)
 {
+    if (!configureMicrosoftApplication(parent))
+        return nullptr;
+
     MSALoginDialog dlg(parent);
     if (dlg.exec() == QDialog::Accepted) {
         return dlg.m_account;
@@ -257,13 +316,6 @@ MinecraftAccountPtr MSALoginDialog::newAccount(QWidget* parent)
 
 MinecraftAccountPtr MSALoginDialog::addAccount(QWidget* parent)
 {
-    if (!APPLICATION->capabilities().testFlag(Application::SupportsMSA)) {
-        APPLICATION->ShowGlobalSettings(parent, "apis");
-        if (!APPLICATION->capabilities().testFlag(Application::SupportsMSA)) {
-            return nullptr;
-        }
-    }
-
     auto account = newAccount(parent);
     if (account) {
         auto* accounts = APPLICATION->accounts();

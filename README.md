@@ -2,15 +2,15 @@
 
 <img src="tools/stellar-prism/screenshots/stellar-logo.png" width="96" alt="Stellar Launcher logo">
 
-[Download Stellar Launcher for Apple silicon](https://github.com/sebastianmiletic/archivelauncher/releases/tag/stellar-v1.4.0) · macOS 14 or later
+[Download Stellar Launcher for Apple silicon](https://github.com/sebastianmiletic/archivelauncher/releases/tag/stellar-v1.4.1)
 
 ![Stellar's wallpaper gallery with three sample Minecraft instances](tools/stellar-prism/screenshots/gallery.png)
 
 Stellar Launcher is a compact Minecraft Java launcher for macOS based on Prism Launcher. It is an independent fork. It includes Prism’s existing instance and resource managers plus a Stellar theme, live library playtime and a Minecraft version switch that checks matching mods and dependencies.
 
 - **Change Minecraft version** in **Edit → Version**. Select the Minecraft component and choose **Change version**. Review compatible mod downloads after the component change. Stellar reports missing and locked mods so you can review them before launching.
-- **Play Minecraft** by signing in under **Accounts → Add Microsoft account**. Stellar installs Java and Minecraft directly. Open a saved world from **Edit → Worlds** or **Singleplayer** in Minecraft.
-- **Development builds** require a Microsoft application registration approved by Minecraft Services. Set its application (client) ID in **Settings → Services**, or provide `ARCHIVE_MSA_CLIENT_ID` at build time. Enable public client flows for personal Microsoft accounts and submit the ID via the [Minecraft API application](https://aka.ms/mce-reviewappid). For browser sign-in, register the Stellar desktop redirect URI `archivelauncher://oauth/microsoft` and, for loopback sign-in, `http://localhost`. Use public client authentication.
+- **Play Minecraft** by opening an instance and selecting **Play**. To link an account, use **Minecraft Accounts → Add Microsoft**. Stellar installs Java and Minecraft directly. Open a saved world from **Edit → Worlds** or **Singleplayer** in Minecraft.
+- **Development builds** require a Microsoft application registration approved by Minecraft Services. Enter its application (client) ID when **Add Microsoft** prompts for setup, or provide `ARCHIVE_MSA_CLIENT_ID` at build time. Enable public client flows for personal Microsoft accounts and submit the ID via the [Minecraft API application](https://aka.ms/mce-reviewappid). For browser sign-in, register the Stellar desktop redirect URI `archivelauncher://oauth/microsoft` and, for loopback sign-in, `http://localhost`. Use public client authentication.
 - **Stellar Look** adds a fixed black-hole scene with an animated accretion disk on Java 26.3 and grayscale menus to Minecraft Java 1.21.9 through 26.3. Install the pack from **Mods, Packs & Shaders → Install Stellar Look** and enable it in Minecraft’s Resource Packs menu.
 - **Updates** use Sparkle on macOS. Stellar checks in the background on startup when automatic updates are enabled. Updates are installed from signed releases. Private GitHub Releases require authentication, so a private repository needs a separately accessible HTTPS feed and download endpoint for Sparkle.
 
@@ -20,9 +20,9 @@ The gallery and Minecraft launch engine run in one Qt application. Stellar uses 
 
 Scroll past the last wallpaper card to **Create New Instance**, or press Command-N. The quick creator offers Vanilla and Fabric. **More Options** opens snapshots, other loaders, and modpacks. Right-click the create tile for **Import Instance** or **Copy Existing Instance** to bring over existing instances and worlds. Use **Minecraft Accounts** to add, switch, or remove Microsoft accounts. Online sign-in requires a Minecraft-approved Stellar application ID as described above. **Change Skin** opens the in-app editor for the signed-in Microsoft account.
 
-**Settings** in the gallery’s right-click panel (Command-comma) controls the opening animation, Minecraft fullscreen, and the launch wallpaper transition. The default animation reveals the instance wallpaper in color from the bottom as the engine prepares Java and Minecraft.
+**Settings** in the gallery’s right-click panel (Command-comma) controls the opening animation, Minecraft fullscreen, and the launch wallpaper transition. The instance wallpaper stays visible while a small progress indicator shows preparation, downloads, and Minecraft startup.
 
-Double-click a wallpaper card to play, or right-click it for Play, Edit Instance, Mods, Packs & Shaders, and wallpaper options. The content manager can add local files or browse compatible Modrinth projects. Use the arrow keys to select an instance or the create tile, Return to activate it, Shift-F10 for options, and Escape to dismiss the panel.
+Click a wallpaper card to open its details and Play button. Right-click a card for Play, Edit Instance, Mods, Packs & Shaders, and wallpaper options. The content manager can add local files or browse compatible Modrinth projects. Use the arrow keys to select an instance or the create tile, Return to open it or play from instance details, Shift-F10 for options, and Escape to dismiss the panel.
 
 Stellar matches installed Java releases to official artwork where Minecraft publishes a matching collection. **Wallpapers** lets you choose another image for the selected instance and save the catalogue locally. The release uses manual downloads from this private GitHub repository.
 

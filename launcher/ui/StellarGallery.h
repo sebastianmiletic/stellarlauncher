@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
-#include <QDateTime>
+#include <QElapsedTimer>
 #include <QHash>
 #include <QSet>
 #include <QUrl>
@@ -21,7 +21,6 @@ class MinecraftInstance;
 class StellarGallery : public QWidget {
 public:
     struct Actions {
-        std::function<void(const QString&)> select;
         std::function<void()> create;
         std::function<void()> importPack;
         std::function<void()> accounts;
@@ -50,6 +49,11 @@ private:
     void rebuild();
     void selectIndex(int index, bool animate);
     void activate(int index);
+    void openInstance(const QString& id);
+    void closeInstance();
+    void playInstance(const QString& id);
+    void refreshInstance();
+    void finishLaunch();
     void showActions(int index);
     void showPreferences();
     void showCreator();
@@ -71,8 +75,10 @@ private:
     QHBoxLayout* m_row;
     QPropertyAnimation* m_slide;
     QTimer* m_launchTimer;
+    QTimer* m_saveSelection;
+    QMetaObject::Connection m_detailRunningChanged;
     QFrame* m_panel = nullptr;
-    QWidget* m_launchCover = nullptr;
+    QWidget* m_detail = nullptr;
     QList<QAbstractButton*> m_tiles;
     QList<Collection> m_collections;
     QHash<QString, QPixmap> m_artwork;
@@ -80,9 +86,10 @@ private:
     QSet<QString> m_attempted;
     QStringList m_ids;
     QString m_selected;
+    QString m_detailId;
     QString m_launching;
     QString m_wallpapers;
-    QDateTime m_launchStarted;
+    QElapsedTimer m_javaStartup;
     int m_index = 0;
     bool m_opened = false;
     bool m_dragging = false;

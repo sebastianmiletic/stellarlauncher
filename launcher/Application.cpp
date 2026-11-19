@@ -837,7 +837,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("InstRenamingMode", "AskEverytime");
         m_settings->registerSetting("EditInstanceOnDoubleClick", false);
         m_settings->registerSetting("SelectedInstance", QString());
-        m_settings->registerSetting("StellarLaunchAnimation", "wave");
+        m_settings->registerSetting("StellarLaunchAnimation", "progress");
         m_settings->registerSetting("StellarFillScreen", false);
         m_settings->registerSetting("StellarOpeningAnimation", true);
         m_settings->registerSetting("StellarMotion", true);

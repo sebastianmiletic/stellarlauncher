@@ -267,7 +267,7 @@ void LaunchController::login()
             const bool configured = APPLICATION->capabilities().testFlag(Application::SupportsMSA);
             QMessageBox choice(QMessageBox::Information, tr("Play Minecraft: Java Edition"),
                                configured ? tr("Sign in with a Microsoft account that owns Minecraft: Java Edition.")
-                                          : tr("Full Minecraft requires an approved Microsoft application ID for Stellar Launcher. Enter it in Services to continue with sign-in."),
+                                          : tr("Set up Stellar’s Microsoft application ID to sign in and play Minecraft: Java Edition."),
                                QMessageBox::Cancel, m_parentWidget);
             auto* signIn = choice.addButton(configured ? tr("Sign in") : tr("Set up Microsoft sign-in…"), QMessageBox::AcceptRole);
             QPushButton* demo = nullptr;

@@ -520,11 +520,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     connect(ui->actionUndoTrashInstance, &QAction::triggered, this, &MainWindow::undoTrashInstance);
 
-    setSelectedInstanceById(APPLICATION->settings()->get("SelectedInstance").toString());
-
-    // removing this looks stupid
-    view->setFocus();
-
     retranslateUi();
 
     auto* originalView = takeCentralWidget();
@@ -535,7 +530,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     menuBar()->hide();
     statusBar()->hide();
     auto* gallery = new StellarGallery({
-        [this](const QString& id) { setSelectedInstanceById(id); },
         [this] { addInstance(); },
         [this] {
             const auto file = QFileDialog::getOpenFileName(this, tr("Import Instance"), {},

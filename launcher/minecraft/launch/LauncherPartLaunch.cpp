@@ -64,7 +64,19 @@ LauncherPartLaunch::LauncherPartLaunch(LaunchTask* parent)
             });
     }
 
-    connect(&m_process, &LoggedProcess::log, this, &LauncherPartLaunch::logLines);
+    connect(&m_process, &LoggedProcess::log, this, [this](const QStringList& lines, MessageLevel level) {
+        logLines(lines, level);
+        auto* instance = m_parent->instance();
+        if (instance->property("stellarLaunchState").toString() != "java")
+            return;
+        for (const auto& line : lines) {
+            if (line.contains("minecraft:textures/atlas/gui.png") ||
+                (line.contains("Created:") && line.contains("textures/atlas/blocks.png"))) {
+                instance->setProperty("stellarLaunchState", "ready");
+                break;
+            }
+        }
+    });
     connect(&m_process, &LoggedProcess::stateChanged, this, &LauncherPartLaunch::on_state);
 }
 

@@ -55,8 +55,7 @@ AccountListPage::AccountListPage(QWidget* parent) : QMainWindow(parent), ui(new 
 {
     ui->setupUi(this);
     ui->listView->setEmptyString(
-        tr("Welcome!\n"
-           "If you're new here, you can select the \"Add Microsoft\" button to link your Microsoft account."));
+        tr("Select Add Microsoft to connect your Minecraft account."));
     ui->listView->setEmptyMode(VersionListView::String);
     ui->listView->setContextMenuPolicy(Qt::CustomContextMenu);
 
@@ -83,16 +82,6 @@ AccountListPage::AccountListPage(QWidget* parent) : QMainWindow(parent), ui(new 
     connect(m_accounts, &AccountList::defaultAccountChanged, this, &AccountListPage::listChanged);
 
     updateButtonStates();
-
-    // Xbox authentication won't work without a client identifier, so disable the button if it is missing
-    if (~APPLICATION->capabilities() & Application::SupportsMSA) {
-        auto* notice = new QLabel(tr("Configure Stellar Launcher’s approved Microsoft application ID under Services to enable sign-in."), this);
-        notice->setWordWrap(true);
-        ui->listView->setToolTip(notice->text());
-        ui->toolBar->insertWidgetBefore(ui->actionAddMicrosoft, notice);
-        ui->actionAddMicrosoft->setEnabled(false);
-        ui->actionAddMicrosoft->setToolTip(tr("No Microsoft Authentication client ID was set."));
-    }
 }
 
 AccountListPage::~AccountListPage()
