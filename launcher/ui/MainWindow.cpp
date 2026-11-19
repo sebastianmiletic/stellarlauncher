@@ -47,6 +47,7 @@
 
 #include <QDir>
 #include <QContextMenuEvent>
+#include <QCryptographicHash>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
@@ -173,7 +174,24 @@ void installStellarLook(QWidget* parent, const QDir& game)
         QMessageBox::warning(parent, QObject::tr("Could not install Stellar Look"), pack.error());
         return;
     }
-    if (!QFileInfo::exists(target)) {
+    if (QFileInfo::exists(target)) {
+        const auto current = FS::read(target);
+        if (!current) {
+            QMessageBox::warning(parent, QObject::tr("Could not read Stellar Look"), current.error());
+            return;
+        }
+        // Keep the same filename so Minecraft retains an existing pack selection.
+        const auto previousStockPack = QByteArray::fromHex("486f1c1044e514f1ff9d889af055adb398366cb48a73f61a236467ea06b34440");
+        if (*current != *pack && QCryptographicHash::hash(*current, QCryptographicHash::Sha256) != previousStockPack) {
+            const auto replace = QMessageBox::question(parent, QObject::tr("Replace Stellar Look?"),
+                                                       QObject::tr("This instance already has a different Stellar Look pack. Replace it with the bundled panorama?"),
+                                                       QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (replace != QMessageBox::Yes) {
+                return;
+            }
+        }
+    }
+    {
         const auto result = FS::write(target, *pack);
         if (!result) {
             QMessageBox::warning(parent, QObject::tr("Could not install Stellar Look"), result.error());

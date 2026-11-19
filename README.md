@@ -5,7 +5,7 @@ Stellar Launcher is a compact Minecraft Java launcher for macOS based on Prism L
 - **Change Minecraft version** in **Edit → Version**. Select the Minecraft component and choose **Change version**. Review compatible mod downloads after the component change. Stellar reports missing and locked mods so you can review them before launching.
 - **Accounts** lets you add and switch between Microsoft accounts. Set a compatible Microsoft app client ID in **Settings → Services** to enable sign-in for the fork. CurseForge services use an optional key configured on the same page.
 - **Play using Prism on macOS** from **File → Play with Prism**. Choose an installed Prism instance and Prism handles Microsoft sign-in and launches it with its existing settings. Choose **Import selected Stellar instance into Prism** in the same menu to export a copy and open Prism’s import screen. After importing, select the instance from **Play with Prism**.
-- **Stellar Look** adds the black-hole title screen and grayscale menus to Minecraft Java 1.21.9 through 26.3. Install the pack from File and enable it in Minecraft’s Resource Packs menu.
+- **Stellar Look** adds an orbiting black-hole panorama and grayscale menus to Minecraft Java 1.21.9 through 26.3. Install the pack from File and enable it in Minecraft’s Resource Packs menu. Reinstall Stellar Look from the same menu to refresh an older copy.
 - **Updates** use Sparkle on macOS. Stellar checks in the background on startup when automatic updates are enabled. Updates are installed from signed releases. Private GitHub Releases require authentication, so a private repository needs a separately accessible HTTPS feed and download endpoint for Sparkle.
 
 ## Build on Apple silicon

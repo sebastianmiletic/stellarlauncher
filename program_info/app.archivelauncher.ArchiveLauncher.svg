@@ -1,8 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <title>Stellar Launcher</title>
-  <desc>A black event horizon with a single tilted white accretion ring.</desc>
-  <rect x="34" y="34" width="444" height="444" rx="103" fill="#101010"/>
-  <circle cx="256" cy="256" r="90" fill="#090909" stroke="#a1a1a1" stroke-width="8"/>
-  <ellipse cx="256" cy="256" rx="169" ry="55" transform="rotate(-24 256 256)" fill="none" stroke="#f1f1f1" stroke-width="19"/>
-  <path d="M166 256a90 90 0 0 1 180 0" fill="#090909" stroke="#a1a1a1" stroke-width="8"/>
+  <desc>A dark event horizon embraced by a tilted white accretion ring.</desc>
+  <defs>
+    <radialGradient id="tile" cx="67%" cy="36%" r="78%">
+      <stop stop-color="#303030"/>
+      <stop offset="1" stop-color="#101010"/>
+    </radialGradient>
+    <radialGradient id="halo">
+      <stop offset=".64" stop-color="#e3e3e3" stop-opacity=".26"/>
+      <stop offset="1" stop-color="#e3e3e3" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="39" y="39" width="434" height="434" rx="102" fill="url(#tile)" stroke="#393939" stroke-width="3"/>
+  <circle cx="256" cy="256" r="123" fill="url(#halo)"/>
+  <path d="M164 257a92 92 0 1 1 184 0a92 92 0 1 1-184 0" fill="#080808" stroke="#909090" stroke-width="8"/>
+  <g transform="rotate(-23 256 256)">
+    <path d="M104 256a152 49 0 0 1 304 0" fill="none" stroke="#9c9c9c" stroke-width="10"/>
+  </g>
+  <path d="M164 256a92 92 0 0 1 184 0" fill="#080808" stroke="#ededed" stroke-width="12"/>
+  <g transform="rotate(-23 256 256)">
+    <path d="M104 256a152 49 0 0 0 304 0" fill="none" stroke="#f3f3f3" stroke-width="19" stroke-linecap="round"/>
+  </g>
 </svg>

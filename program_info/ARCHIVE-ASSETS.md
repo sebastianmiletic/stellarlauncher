@@ -8,6 +8,6 @@ Original Stellar Launcher artwork, created as editable SVG for this project. Lic
 - `app.archivelauncher.ArchiveLauncher.svg`: embedded app mark.
 - `archive-launcher.icns`, `archive-launcher.ico`, `archive.iconset/`: OS exports.
 
-- `stellar-wallpaper.svg`: monochrome black-hole artwork used in the launcher and Minecraft title screen.
+- `stellar-wallpaper.jpg`: generated monochrome black-hole artwork, normalized to 3840 × 2160 for the launcher and the Minecraft panorama.
 
 The mark pairs a dark event horizon with a single white accretion ring. The launcher reveals the wallpaper from the bottom during game startup.

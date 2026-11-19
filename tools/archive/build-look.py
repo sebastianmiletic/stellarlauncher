@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""Build Stellar Look from original artwork using librsvg."""
+"""Build Stellar Look from original artwork using Pillow and librsvg."""
+from io import BytesIO
 import json
 from pathlib import Path
-import random
 import subprocess
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
+
+from PIL import Image, ImageChops
 
 
 ROOT = Path(__file__).resolve().parents[2]
 GUI = "assets/minecraft/textures/gui/"
 MARK = (ROOT / "program_info/archive-mark.svg").read_text()
-MARK_ART = MARK[MARK.index("  <rect"):MARK.index("</svg>")]
-WALLPAPER = (ROOT / "program_info/stellar-wallpaper.svg").read_text()
+MARK_ART = MARK[MARK.index("  <defs>"):MARK.index("</svg>")]
+WALLPAPER = ROOT / "program_info/stellar-wallpaper.jpg"
+FACE_SIZE = 2048
 
 
 def rasterize(svg):
@@ -32,16 +35,38 @@ def svg_text(x, y, size, color, label):
     )
 
 
+def png(image):
+    with BytesIO() as output:
+        image.save(output, format="PNG", optimize=True)
+        return output.getvalue()
+
+
 def panorama():
-    # Use the same sky color on all six faces to avoid seams as it rotates.
-    rng = random.Random(1928)
-    for face in range(6):
-        stars = "".join(
-            f'<rect x="{rng.randrange(8, 248)}" y="{rng.randrange(8, 248)}" '
-            f'width="1" height="1" fill="#c9c9c9" opacity="{rng.uniform(.17, .65):.2f}"/>'
-            for _ in range(48)
-        )
-        yield face, rasterize(svg(256, 256, '<rect width="256" height="256" fill="#101010"/>' + stars))
+    # Four views around the menu camera's orbit. The feathered edges match
+    # the polar faces so adjacent cube faces meet without visible seams.
+    sky = Image.new("L", (FACE_SIZE, FACE_SIZE), 4)
+    with Image.open(WALLPAPER) as wallpaper:
+        art = wallpaper.convert("L")
+        art.thumbnail((FACE_SIZE, FACE_SIZE), Image.Resampling.LANCZOS)
+
+    def edge_fade(length, feather):
+        return bytes(round(255 * min(1, min(i, length - 1 - i) / feather)) for i in range(length))
+
+    fade_x = Image.frombytes("L", (art.width, 1), edge_fade(art.width, 320)).resize(art.size)
+    fade_y = Image.frombytes("L", (1, art.height), edge_fade(art.height, 160)).resize(art.size)
+    feather = ImageChops.multiply(fade_x, fade_y)
+    center = ((FACE_SIZE - art.width) // 2, (FACE_SIZE - art.height) // 2 - 35)
+
+    for face, roll in enumerate((0, -12, 9, -5)):
+        image = sky.copy()
+        image.paste(art, center, feather)
+        if roll:
+            image = image.rotate(roll, resample=Image.Resampling.BICUBIC, fillcolor=4)
+        yield face, png(image)
+
+    polar = png(sky)
+    yield 4, polar
+    yield 5, polar
 
 
 def build():
@@ -53,7 +78,7 @@ def build():
 
         write("pack.mcmeta", json.dumps({
             "pack": {
-                "description": "Stellar Launcher · Event Horizon",
+                "description": "Stellar Launcher · Event Horizon Panorama",
                 "min_format": [69, 0],
                 "max_format": [97, 1],
             },
@@ -73,9 +98,8 @@ def build():
 
         for face, image in panorama():
             write(f"{GUI}title/background/panorama_{face}.png", image)
-        # The game's screen-space panorama overlay keeps the black hole in frame.
-        overlay = WALLPAPER.replace('width="1024" height="560"', 'width="512" height="280"')
-        write(f"{GUI}title/background/panorama_overlay.png", rasterize(overlay))
+        # A subtle veil keeps the white menu labels readable over the disk.
+        write(f"{GUI}title/background/panorama_overlay.png", png(Image.new("RGBA", (1, 1), (0, 0, 0, 60))))
 
         for name, fill, border in (
             ("button", "#222222", "#626262"),

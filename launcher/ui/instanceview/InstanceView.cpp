@@ -479,14 +479,19 @@ void InstanceView::paintEvent([[maybe_unused]] QPaintEvent* event)
     const auto bounds = viewport()->rect();
     const auto reveal = m_wallpaperReveal.currentValue().toReal();
     if (reveal > 0 || model()->rowCount() == 0) {
-        static const QIcon wallpaper(QStringLiteral(":/stellar-wallpaper.svg"));
-        const auto size = QSize(1024, 560).scaled(bounds.size(), Qt::KeepAspectRatioByExpanding);
+        static const QIcon wallpaper(QStringLiteral(":/stellar-wallpaper.jpg"));
+        const auto cover = QSize(3840, 2160).scaled(bounds.size(), Qt::KeepAspectRatioByExpanding);
+        const auto size = reveal > 0 ? cover * 1.09 : cover;
         const QRect art(QPoint((bounds.width() - size.width()) / 2, (bounds.height() - size.height()) / 2), size);
         painter.save();
         if (reveal > 0) {
             const auto height = qRound(bounds.height() * reveal);
             painter.setClipRect(0, bounds.height() - height, bounds.width(), height);
-            painter.setOpacity(0.8);
+            painter.setOpacity(0.68);
+            const auto center = QRectF(bounds).center();
+            painter.translate(center);
+            painter.rotate((1.0 - reveal) * -4.0);
+            painter.translate(-center);
         } else {
             painter.setOpacity(0.36);
         }
