@@ -10,6 +10,12 @@ struct GameInstance: Identifiable, Equatable {
     let folder: URL
 }
 
+enum LibraryPanel {
+    case instance
+    case wallpapers
+    case library
+}
+
 @MainActor
 final class PrismLibrary: ObservableObject {
     static let bundleID = "org.prismlauncher.PrismLauncher"
@@ -20,7 +26,7 @@ final class PrismLibrary: ObservableObject {
         didSet { UserDefaults.standard.set(selection, forKey: "SelectedInstance") }
     }
     @Published var notice = ""
-    @Published var showWallpapers = false
+    @Published var panel: LibraryPanel?
     @Published private(set) var prism: URL?
 
     var selected: GameInstance? { instances.first { $0.id == selection } }
@@ -57,6 +63,21 @@ final class PrismLibrary: ObservableObject {
             return order == .orderedSame ? lhs.id < rhs.id : order == .orderedAscending
         }
         if !instances.contains(where: { $0.id == selection }) { selection = instances.first?.id }
+    }
+
+    func moveSelection(by step: Int) {
+        guard !instances.isEmpty else { return }
+        let current = instances.firstIndex { $0.id == selection } ?? 0
+        selection = instances[min(max(current + step, 0), instances.count - 1)].id
+    }
+
+    func selectBoundary(last: Bool) {
+        selection = (last ? instances.last : instances.first)?.id
+    }
+
+    func playSelected() {
+        guard let selected, prism != nil else { return }
+        play(selected)
     }
 
     func play(_ instance: GameInstance) { send(["--launch", instance.id]) }

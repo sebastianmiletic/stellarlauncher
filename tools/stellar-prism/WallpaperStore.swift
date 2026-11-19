@@ -17,7 +17,10 @@ final class WallpaperStore: ObservableObject {
         .appendingPathComponent("Library/Application Support/Stellar Gallery/Wallpapers", isDirectory: true)
     let sets: [WallpaperSet]
     @Published private(set) var files: [String: [URL]] = [:]
-    @Published var collection = ""
+    @Published var collection = "" {
+        didSet { if collection != oldValue { highlighted = nil } }
+    }
+    @Published var highlighted: URL?
     @Published private(set) var downloading = false
     @Published private(set) var completed = 0
     @Published private(set) var message = ""
@@ -45,6 +48,27 @@ final class WallpaperStore: ObservableObject {
         return ["3840x2160", "2560x1440", "1920x1080", "desktop", "landscape"]
             .lazy.compactMap { label in images.first { $0.lastPathComponent.lowercased().contains(label) } }
             .first ?? images.first
+    }
+
+    var visibleImages: [URL] { files[collection] ?? [] }
+    var selectedImage: URL? {
+        if let highlighted, visibleImages.contains(highlighted) { return highlighted }
+        return visibleImages.first
+    }
+
+    func moveHighlight(by step: Int) {
+        let images = visibleImages
+        guard !images.isEmpty else { return }
+        let current = selectedImage.flatMap { images.firstIndex(of: $0) } ?? 0
+        highlighted = images[min(max(current + step, 0), images.count - 1)]
+    }
+
+    func selectBoundary(last: Bool) {
+        highlighted = last ? visibleImages.last : visibleImages.first
+    }
+
+    func hasChoice(for instance: GameInstance) -> Bool {
+        covers[instance.id] != nil
     }
 
     func choose(_ image: URL, for instance: GameInstance) {
@@ -166,23 +190,37 @@ final class WallpaperStore: ObservableObject {
 
 struct WallpaperImage: View {
     let url: URL?
+    private static let thumbnails: NSCache<NSURL, NSImage> = {
+        let cache = NSCache<NSURL, NSImage>()
+        cache.totalCostLimit = 24 * 1_048_576
+        return cache
+    }()
+
     var body: some View {
         GeometryReader { geometry in
             Group {
-                if let source = url ?? Bundle.main.url(forResource: "stellar-wallpaper", withExtension: "jpg"),
-                   let reference = CGImageSourceCreateWithURL(source as CFURL, nil),
-                   let bitmap = CGImageSourceCreateThumbnailAtIndex(reference, 0, [
-                       kCGImageSourceCreateThumbnailFromImageAlways: true,
-                       kCGImageSourceThumbnailMaxPixelSize: 600,
-                       kCGImageSourceCreateThumbnailWithTransform: true,
-                   ] as CFDictionary) {
-                    Image(nsImage: NSImage(cgImage: bitmap, size: .zero))
-                        .resizable().scaledToFill()
+                if let image = thumbnail() {
+                    Image(nsImage: image).resizable().scaledToFill()
                 } else {
                     Color(white: 0.16)
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height).clipped()
         }
         .accessibilityHidden(true)
+    }
+
+    private func thumbnail() -> NSImage? {
+        guard let source = url ?? Bundle.main.url(forResource: "stellar-wallpaper", withExtension: "jpg") else { return nil }
+        let key = source as NSURL
+        if let cached = Self.thumbnails.object(forKey: key) { return cached }
+        guard let reference = CGImageSourceCreateWithURL(source as CFURL, nil),
+              let bitmap = CGImageSourceCreateThumbnailAtIndex(reference, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceThumbnailMaxPixelSize: 640,
+                  kCGImageSourceCreateThumbnailWithTransform: true,
+              ] as CFDictionary) else { return nil }
+        let image = NSImage(cgImage: bitmap, size: .zero)
+        Self.thumbnails.setObject(image, forKey: key, cost: bitmap.bytesPerRow * bitmap.height)
+        return image
     }
 }

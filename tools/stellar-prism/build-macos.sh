@@ -24,8 +24,8 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleIconFile</key><string>Stellar.icns</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
-    <key>CFBundleShortVersionString</key><string>1.1.1</string>
-    <key>CFBundleVersion</key><string>3</string>
+    <key>CFBundleShortVersionString</key><string>1.2.0</string>
+    <key>CFBundleVersion</key><string>4</string>
     <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
