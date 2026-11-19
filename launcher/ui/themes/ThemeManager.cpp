@@ -192,11 +192,9 @@ void ThemeManager::initializeWidgets()
     themeDebugLog() << "<> Widget themes initialized.";
 }
 
-#ifndef Q_OS_MACOS
 void ThemeManager::setTitlebarColorOnMac(WId windowId, const QColor& color) {}
 void ThemeManager::setTitlebarColorOfAllWindowsOnMac(const QColor& color) {}
 void ThemeManager::stopSettingNewWindowColorsOnMac() {}
-#endif
 
 QList<IconTheme*> ThemeManager::getValidIconThemes()
 {

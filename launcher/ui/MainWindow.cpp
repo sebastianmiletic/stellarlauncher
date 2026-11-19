@@ -43,6 +43,10 @@
 #include "FileSystem.h"
 
 #include "MainWindow.h"
+#include "StellarGallery.h"
+
+#include <QPainterPath>
+#include <QShortcut>
 #include "ui_MainWindow.h"
 
 #include <QDir>
@@ -522,6 +526,43 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     view->setFocus();
 
     retranslateUi();
+
+    auto* originalView = takeCentralWidget();
+    originalView->setParent(this);
+    originalView->hide();
+    ui->mainToolBar->hide();
+    ui->instanceToolBar->hide();
+    menuBar()->hide();
+    statusBar()->hide();
+    auto* gallery = new StellarGallery({
+        [this](const QString& id) { setSelectedInstanceById(id); },
+        [this] { addInstance(); },
+        [this] {
+            const auto file = QFileDialog::getOpenFileName(this, tr("Import Instance"), {},
+                                                          tr("Minecraft packs (*.zip *.mrpack)"));
+            if (!file.isEmpty())
+                processURLs({ QUrl::fromLocalFile(file) });
+        },
+        [this] { on_actionManageAccounts_triggered(); },
+        [this] { on_actionManageSkins_triggered(); },
+        [this](const QString& id) {
+            if (auto* instance = APPLICATION->instances()->getInstanceById(id))
+                installStellarLook(this, QDir(instance->gameRoot()));
+        },
+    }, this);
+    setWindowFlag(Qt::FramelessWindowHint);
+    setWindowTitle(tr("Stellar Launcher"));
+    setFixedSize(gallery->size());
+    setCentralWidget(gallery);
+    QPainterPath outline;
+    outline.addRoundedRect(rect(), 17, 17);
+    setMask(QRegion(outline.toFillPolygon().toPolygon()));
+    gallery->setFocus();
+
+    auto* close = new QShortcut(QKeySequence::Close, gallery);
+    connect(close, &QShortcut::activated, this, &QWidget::close);
+    auto* quit = new QShortcut(QKeySequence::Quit, gallery);
+    connect(quit, &QShortcut::activated, this, &QWidget::close);
 }
 
 void MainWindow::retranslateUi()

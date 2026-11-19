@@ -9,8 +9,8 @@ cmake -S "$source_dir" -B "$workspace_dir/build" -G Ninja \
   -DLauncher_BUILD_PLATFORM=archive-macos-arm64 -DBUILD_TESTING=ON \
   -DJava_JAVA_EXECUTABLE=/opt/homebrew/opt/openjdk@17/bin/java \
   -DJava_JAVAC_EXECUTABLE=/opt/homebrew/opt/openjdk@17/bin/javac \
-  -DMACOSX_SPARKLE_UPDATE_FEED_URL="${ARCHIVE_UPDATE_FEED_URL-https://github.com/sebastianmiletic/archivelauncher/releases/latest/download/appcast.xml}" \
-  -DMACOSX_SPARKLE_UPDATE_PUBLIC_KEY="${ARCHIVE_UPDATE_PUBLIC_KEY-PqH556NKaC1/iq5om4zBz/2NQ0/WsiMfVi+1wHgdbTo=}" \
+  -DMACOSX_SPARKLE_UPDATE_FEED_URL="${ARCHIVE_UPDATE_FEED_URL:-}" \
+  -DMACOSX_SPARKLE_UPDATE_PUBLIC_KEY="${ARCHIVE_UPDATE_PUBLIC_KEY:-}" \
   -DLauncher_MSA_CLIENT_ID="${ARCHIVE_MSA_CLIENT_ID:-}" \
   -DLauncher_CURSEFORGE_API_KEY="${ARCHIVE_CURSEFORGE_API_KEY:-}"
 cmake --build "$workspace_dir/build" -j "${ARCHIVE_BUILD_JOBS:-6}"

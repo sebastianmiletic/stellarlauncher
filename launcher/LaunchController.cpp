@@ -437,6 +437,8 @@ void LaunchController::readyForLaunch()
 {
     const auto progress = m_instance->property("stellarGalleryProgress").toString();
     StellarLaunchProgress::write(progress, "java " + QByteArray::number(m_launcher->pid()));
+    if (m_instance->property("stellarLaunchState").isValid())
+        m_instance->setProperty("stellarLaunchState", "java");
     if (!m_profiler) {
         m_launcher->proceed();
         return;
@@ -499,15 +501,21 @@ void LaunchController::onFailed(QString reason)
 void LaunchController::onProgressRequested(Task* task) const
 {
     const auto progressFile = m_instance->property("stellarGalleryProgress").toString();
-    if (!progressFile.isEmpty()) {
+    const bool galleryLaunch = m_instance->property("stellarLaunchState").isValid();
+    if (!progressFile.isEmpty() || galleryLaunch) {
         StellarLaunchProgress::write(progressFile, "download 0");
-        connect(task, &Task::progress, this, [progressFile, lastPercentage = -1](qint64 completed, qint64 total) mutable {
+        if (galleryLaunch)
+            m_instance->setProperty("stellarLaunchState", "download 0");
+        connect(task, &Task::progress, this, [progressFile, instance = m_instance, galleryLaunch, lastPercentage = -1](qint64 completed, qint64 total) mutable {
             if (total <= 0)
                 return;
             const auto percentage = qRound(qBound(0.0, double(completed) / double(total), 1.0) * 100);
             if (percentage != lastPercentage) {
                 lastPercentage = percentage;
-                StellarLaunchProgress::write(progressFile, "download " + QByteArray::number(percentage / 100.0));
+                const auto status = "download " + QByteArray::number(percentage / 100.0);
+                StellarLaunchProgress::write(progressFile, status);
+                if (galleryLaunch)
+                    instance->setProperty("stellarLaunchState", QString::fromLatin1(status));
             }
         });
         m_launcher->proceed();

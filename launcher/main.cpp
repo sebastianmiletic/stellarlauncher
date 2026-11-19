@@ -48,7 +48,9 @@ int main(int argc, char* argv[])
     console::WindowsConsoleGuard _consoleGuard;
 #endif
 
-    // initialize Qt
+    // Stellar draws its menus and dialogs with the launcher theme on every platform.
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeMenuBar);
     Application app(argc, argv);
     switch (app.status()) {
         case Application::StartingUp:
@@ -57,6 +59,7 @@ int main(int argc, char* argv[])
             Q_INIT_RESOURCE(backgrounds);
             Q_INIT_RESOURCE(documents);
             Q_INIT_RESOURCE(archivelauncher);
+            Q_INIT_RESOURCE(stellar_gallery);
 
             Q_INIT_RESOURCE(pe_dark);
             Q_INIT_RESOURCE(pe_light);

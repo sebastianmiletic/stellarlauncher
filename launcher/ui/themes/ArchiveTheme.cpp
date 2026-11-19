@@ -44,6 +44,12 @@ QString ArchiveTheme::appStyleSheet()
         QPushButton:default { border-color: #eaeaea; }
         QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox { border: 1px solid #444444; border-radius: 8px; padding: 4px; }
         QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus { border-color: #eaeaea; }
+        QComboBox { padding: 5px 25px 5px 9px; background: #242424; }
+        QComboBox::drop-down { border: none; width: 23px; }
+        QComboBox::down-arrow { image: url(:/stellar-gallery/chevron.svg); width: 12px; height: 8px; }
+        QComboBox QAbstractItemView { background: #1d1d1d; color: #eeeeee; padding: 4px; border: 1px solid #424242; }
+        QComboBox QAbstractItemView::item { padding: 5px 7px; }
+        QLineEdit { background: #1b1b1b; padding: 6px 8px; }
         QMenu { background: #1d1d1d; color: #eeeeee; border: 1px solid #424242; padding: 4px; menu-scrollable: 1; }
         QMenu::item { padding: 5px 28px 5px 25px; }
         QMenu::item:selected { background: #383838; color: #f2f2f2; border-radius: 4px; }

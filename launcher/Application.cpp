@@ -420,6 +420,9 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         }
 
         dataPath = foo.absolutePath();
+#ifdef Q_OS_MACOS
+        dataPath = QDir::home().filePath("Library/Application Support/Stellar Launcher");
+#endif
         adjustedBy = "Persistent data path";
 
 #ifndef Q_OS_MACOS
@@ -733,7 +736,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("JsonEditor", QString());
 
         // Language
-        m_settings->registerSetting("Language", QString());
+        m_settings->registerSetting("Language", QLocale::system().name());
         m_settings->registerSetting("UseSystemLocale", false);
 
         // Console
@@ -834,6 +837,39 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("InstRenamingMode", "AskEverytime");
         m_settings->registerSetting("EditInstanceOnDoubleClick", false);
         m_settings->registerSetting("SelectedInstance", QString());
+        m_settings->registerSetting("StellarLaunchAnimation", "wave");
+        m_settings->registerSetting("StellarFillScreen", false);
+        m_settings->registerSetting("StellarOpeningAnimation", true);
+        m_settings->registerSetting("StellarMotion", true);
+        m_settings->registerSetting("StellarWallpaperCovers", QVariantMap{});
+#ifdef Q_OS_MACOS
+        m_settings->registerSetting("StellarImportedGalleryPreferences", false);
+        const auto previousRoot = QDir::home().filePath("Library/Application Support/Stellar Launcher");
+        const auto previousPreferences = QDir::home().filePath("Library/Preferences/app.archivelauncher.StellarPrism.plist");
+        if (QDir(m_dataPath) == QDir(previousRoot) && QFileInfo::exists(previousPreferences) &&
+            !m_settings->get("StellarImportedGalleryPreferences").toBool()) {
+            const QSettings previous(previousPreferences, QSettings::NativeFormat);
+            const QHash<QString, QString> animations{
+                {"Color Wave", "wave"}, {"Color Reveal", "wipe"}, {"Fade to Color", "fade"}, {"Off", "off"}};
+            const auto previousAnimation = animations.value(previous.value("LaunchAnimation").toString());
+            const SettingsObject::Lock lock(m_settings.get());
+            if (!previousAnimation.isEmpty())
+                m_settings->set("StellarLaunchAnimation", previousAnimation);
+            if (previous.contains("FillGameScreen"))
+                m_settings->set("StellarFillScreen", previous.value("FillGameScreen").toBool());
+            if (previous.contains("DisableOpeningAnimation"))
+                m_settings->set("StellarOpeningAnimation", !previous.value("DisableOpeningAnimation").toBool());
+            if (m_settings->get("SelectedInstance").toString().isEmpty())
+                m_settings->set("SelectedInstance", previous.value("SelectedInstance").toString());
+            auto covers = previous.value("WallpaperCovers").toMap();
+            const QDir cache(QDir::home().filePath("Library/Application Support/Stellar Gallery/Wallpapers"));
+            for (auto it = covers.begin(); it != covers.end(); ++it)
+                it.value() = cache.filePath(it.value().toString());
+            if (!covers.isEmpty())
+                m_settings->set("StellarWallpaperCovers", covers);
+            m_settings->set("StellarImportedGalleryPreferences", true);
+        }
+#endif
 
         // Window state and geometry
         m_settings->registerSetting("MainWindowState", "");
@@ -1250,6 +1286,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
     if (!createSetupWizard()) {
         m_themeManager->applyCurrentlySelectedTheme(true);
     }
+    m_themeManager->setApplicationTheme("archive", true);
     performMainStartupAction();
 }
 
@@ -1279,9 +1316,8 @@ bool Application::createSetupWizard()
     bool pasteInterventionRequired = settings()->get("PastebinURL") != "";
     bool validWidgets = m_themeManager->isValidApplicationTheme(settings()->get("ApplicationTheme").toString());
     bool validIcons = m_themeManager->isValidIconTheme(settings()->get("IconTheme").toString());
-    bool login = !m_galleryEngine && !m_accounts->anyAccountIsValid() && (capabilities().testAnyFlags(Application::SupportsMSA));
     bool themeInterventionRequired = !validWidgets || !validIcons;
-    bool wizardRequired = javaRequired || languageRequired || pasteInterventionRequired || themeInterventionRequired || askjava || login;
+    bool wizardRequired = javaRequired || languageRequired || pasteInterventionRequired || themeInterventionRequired || askjava;
     if (wizardRequired) {
         const bool darkMode = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
         // set default theme after going into theme wizard
@@ -1327,9 +1363,6 @@ bool Application::createSetupWizard()
             setupWizard.addPage(new ThemeWizardPage(&setupWizard));
         }
 
-        if (login) {
-            setupWizard.addPage(new LoginWizardPage(&setupWizard));
-        }
         if (setupWizard.exec() != QDialog::Accepted) {
             qWarning() << "Setup wizard was not completed; continuing with the current settings";
         }
@@ -1618,7 +1651,7 @@ JavaInstallList* Application::javalist()
 
 QIcon Application::logo()
 {
-    return QIcon(":/" + BuildConfig.LAUNCHER_SVGFILENAME);
+    return QIcon(":/stellar-gallery/mark.svg");
 }
 
 bool Application::openJsonEditor(const QString& filename)
@@ -1668,6 +1701,12 @@ bool Application::launch(MinecraftInstance* instance,
             });
         }
         connect(controller, &LaunchController::finished, this, &Application::controllerFinished);
+        if (instance->property("stellarLaunchState").isValid()) {
+            connect(controller, &LaunchController::finished, this, [instance] {
+                instance->setProperty("stellarLaunchState", {});
+                instance->setProperty("stellarGalleryFullscreen", {});
+            });
+        }
         addRunningInstance();
         emit preparingGame(instance->gameRoot(), controller);
         QMetaObject::invokeMethod(controller, &Task::start, Qt::QueuedConnection);
@@ -1791,6 +1830,8 @@ MainWindow* Application::showMainWindow(bool minimized)
             m_mainWindow->showMinimized();
         } else {
             m_mainWindow->show();
+            m_mainWindow->raise();
+            m_mainWindow->activateWindow();
         }
 
         m_mainWindow->checkInstancePathForProblems();

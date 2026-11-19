@@ -808,6 +808,8 @@ SET(LAUNCHER_SOURCES
     # GUI - windows
     ui/MainWindow.h
     ui/MainWindow.cpp
+    ui/StellarGallery.cpp
+    ui/StellarGallery.h
     ui/InstanceWindow.h
     ui/InstanceWindow.cpp
     ui/ViewLogWindow.h
@@ -1159,13 +1161,6 @@ SET(LAUNCHER_SOURCES
     ui/instanceview/VisualGroup.h
 )
 
-if (APPLE)
-    set(LAUNCHER_SOURCES
-        ${LAUNCHER_SOURCES}
-        ui/themes/ThemeManager.mm
-    )
-endif()
-
 if (NOT Apple)
     set(LAUNCHER_SOURCES
     ${LAUNCHER_SOURCES}
@@ -1193,6 +1188,7 @@ if(WIN32)
 endif()
 
 qt_add_resources(LAUNCHER_RESOURCES
+    stellar_gallery.qrc
     resources/backgrounds/backgrounds.qrc
     resources/multimc/multimc.qrc
     resources/pe_dark/pe_dark.qrc
@@ -1302,7 +1298,6 @@ if(APPLE)
     endif()
 
     target_link_libraries(Launcher_logic
-        "-framework AppKit"
         "-framework Carbon"
         "-framework Foundation"
         "-framework ApplicationServices"

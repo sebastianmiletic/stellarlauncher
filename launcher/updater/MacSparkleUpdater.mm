@@ -93,8 +93,6 @@ class MacSparkleUpdater::Private {
 MacSparkleUpdater::MacSparkleUpdater() {
     priv = new MacSparkleUpdater::Private();
 
-    // Enable Cocoa's memory management.
-    NSApplicationLoad();
     priv->autoReleasePool = [[NSAutoreleasePool alloc] init];
 
     // Delegate is used for setting/getting allowed update channels.
