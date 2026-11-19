@@ -1,0 +1,202 @@
+[
+  {
+    "id": "java",
+    "title": "Java Edition",
+    "versions": [],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_minecraft_pc_bundle.zip"
+  },
+  {
+    "id": "wilderness",
+    "title": "Wilderness Bound",
+    "versions": [
+      "26.3"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_wilderness_bound_drop.zip"
+  },
+  {
+    "id": "chaos",
+    "title": "Chaos Cubed",
+    "versions": [
+      "26.2"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_chaos_cubed_drop.zip"
+  },
+  {
+    "id": "tiny",
+    "title": "Tiny Takeover",
+    "versions": [
+      "26.1"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_tiny_takeover_drop.zip"
+  },
+  {
+    "id": "mayhem",
+    "title": "Mounts of Mayhem",
+    "versions": [
+      "1.21.11"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_mounts_of_mayhem_drop.zip"
+  },
+  {
+    "id": "copper",
+    "title": "The Copper Age",
+    "versions": [
+      "1.21.9",
+      "1.21.10"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_the_copper_age_drop-1.zip"
+  },
+  {
+    "id": "skies",
+    "title": "Chase the Skies",
+    "versions": [
+      "1.21.6",
+      "1.21.7",
+      "1.21.8"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_chase_the_skies_update.zip"
+  },
+  {
+    "id": "spring",
+    "title": "Spring to Life",
+    "versions": [
+      "1.21.5"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_spring_to_life_update.zip"
+  },
+  {
+    "id": "garden",
+    "title": "The Garden Awakens",
+    "versions": [
+      "1.21.4"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_the_garden_awakens_update.zip"
+  },
+  {
+    "id": "bundles",
+    "title": "Bundles of Bravery",
+    "versions": [
+      "1.21.2",
+      "1.21.3"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_bundles_of_bravery.zip"
+  },
+  {
+    "id": "trials",
+    "title": "Tricky Trials",
+    "versions": [
+      "1.21",
+      "1.21.1"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_tricky_trials_update2.zip"
+  },
+  {
+    "id": "trails",
+    "title": "Trails & Tales",
+    "versions": [
+      "1.20"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/Minecraft_Trails_and_Tales_.Net.zip"
+  },
+  {
+    "id": "wild",
+    "title": "The Wild Update",
+    "versions": [
+      "1.19"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpaper_minecraft_wild_update.zip",
+    "fallback": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/key-art/Vanilla-PMP_Collection-Carousel-0_The-Wild-Update_1280x768.jpg?v=1720769521148"
+  },
+  {
+    "id": "cliffs-2",
+    "title": "Caves & Cliffs II",
+    "versions": [
+      "1.18"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_minecraft_caves_cliffs%28part2%29.zip"
+  },
+  {
+    "id": "cliffs-1",
+    "title": "Caves & Cliffs I",
+    "versions": [
+      "1.17"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_minecraft_caves_cliffs%28part1%29.zip"
+  },
+  {
+    "id": "nether",
+    "title": "Nether Update",
+    "versions": [
+      "1.16"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_minecraft_nether_update.zip"
+  },
+  {
+    "id": "bees",
+    "title": "Buzzy Bees",
+    "versions": [
+      "1.15"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_minecraft_buzzybees.zip"
+  },
+  {
+    "id": "village",
+    "title": "Village & Pillage",
+    "versions": [
+      "1.14"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_minecraft_village_pillage.zip"
+  },
+  {
+    "id": "aquatic",
+    "title": "Update Aquatic",
+    "versions": [
+      "1.13"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_minecraft_update_aquatic.zip"
+  },
+  {
+    "id": "pandas",
+    "title": "Cats & Pandas",
+    "versions": [],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpaper_minecraft_cats_pandas.zip"
+  },
+  {
+    "id": "color",
+    "title": "World of Color",
+    "versions": [
+      "1.12"
+    ],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_minecraft_world_color.zip"
+  },
+  {
+    "id": "boat",
+    "title": "Boat Trip",
+    "versions": [],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_minecraft_ocean_monument_.zip"
+  },
+  {
+    "id": "beach",
+    "title": "Beach Cabin",
+    "versions": [],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_minecraft_island.zip"
+  },
+  {
+    "id": "mining",
+    "title": "Mining",
+    "versions": [],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_minecraft_mineshaft.zip"
+  },
+  {
+    "id": "skins",
+    "title": "New Skins Lineup",
+    "versions": [],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_minecraft_default_skins.zip"
+  },
+  {
+    "id": "winter",
+    "title": "Winter Celebration",
+    "versions": [],
+    "archive": "https://www.minecraft.net/content/dam/minecraftnet/games/minecraft/software/wallpapers_minecraft_winter_celebration.zip"
+  }
+]
