@@ -8,6 +8,12 @@ Stellar Launcher is a compact Minecraft Java launcher for macOS based on Prism L
 - **Stellar Look** adds a fixed black-hole scene with an animated accretion disk on Java 26.3 and grayscale menus to Minecraft Java 1.21.9 through 26.3. Install the pack from File and enable it in Minecraft’s Resource Packs menu. Reinstall Stellar Look from the same menu to refresh an older copy.
 - **Updates** use Sparkle on macOS. Stellar checks in the background on startup when automatic updates are enabled. Updates are installed from signed releases. Private GitHub Releases require authentication, so a private repository needs a separately accessible HTTPS feed and download endpoint for Sparkle.
 
+## Give Prism the Stellar look
+
+The [Stellar Prism appearance release](https://github.com/sebastianmiletic/archivelauncher/releases/tag/stellar-theme-v1.0.0) includes a macOS **Stellar Launcher.app** with the black-hole icon and a portable theme. On macOS, quit Prism and open Stellar Launcher to apply the theme and open your existing Prism library. Prism continues to provide sign-in, updates, Java and mod management.
+
+To install the portable theme, extract its `themes`, `catpacks` and `icons` folders into Prism’s data directory. Restart Prism, set **Widgets** to **Stellar** and **Icons** to **Flat White**, then select **Stellar Library** as the instance background and enable the background. The **Stellar Instance** icon is available through an instance’s icon selector.
+
 ## Play Stellar with Prism
 
 Download [Stellar 1.0.0](https://github.com/sebastianmiletic/archivelauncher/releases/tag/stellar-pack-v1.0.0) and import the `.mrpack` from **Prism → Add Instance → Import**. Sign in to Prism with your Microsoft account that owns Minecraft Java and launch **Stellar**. The pack selects Minecraft 26.3 and Fabric, downloads Lithium from Modrinth, and enables Stellar Look on the new instance. The game and dependencies download through the launcher.

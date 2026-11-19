@@ -1,0 +1,22 @@
+{
+  "name": "Stellar",
+  "widgets": "Fusion",
+  "colors": {
+    "Window": "#141414",
+    "WindowText": "#efefef",
+    "Base": "#0c0c0c",
+    "AlternateBase": "#191919",
+    "Text": "#ececec",
+    "Button": "#232323",
+    "ButtonText": "#ededed",
+    "BrightText": "#f5f5f5",
+    "Link": "#dedede",
+    "Highlight": "#ebebeb",
+    "HighlightedText": "#141414",
+    "ToolTipBase": "#242424",
+    "ToolTipText": "#f0f0f0",
+    "fadeAmount": 0.45,
+    "fadeColor": "#151515"
+  },
+  "tooltip": "Stellar's monochrome launcher theme"
+}
