@@ -11,7 +11,7 @@ Stellar Launcher is a compact Minecraft Java launcher built on Prism Launcher’
 - **Change Minecraft version** in **Edit → Version**. Select the Minecraft component and choose **Change version**. Review compatible mod downloads after the component change. Stellar reports missing and locked mods so you can review them before launching.
 - **Play Minecraft** by opening an instance and selecting **Play**. To link an account, use **Minecraft Accounts → Add Microsoft**. Stellar installs Java and Minecraft directly. Open a saved world from **Edit → Worlds** or **Singleplayer** in Minecraft.
 - **Stellar Look** adds a fixed black-hole scene with an animated accretion disk on Java 26.3 and grayscale menus to Minecraft Java 1.21.9 through 26.3. Install the pack from **Mods, Packs & Shaders → Install Stellar Look** and enable it in Minecraft’s Resource Packs menu.
-- **Updates** use Sparkle on macOS. Stellar checks in the background on startup when automatic updates are enabled. Updates are installed from signed releases. Private GitHub Releases require authentication, so a private repository needs a separately accessible HTTPS feed and download endpoint for Sparkle.
+- **Updates** use Sparkle on macOS. Stellar checks in the background on startup when automatic updates are enabled. Updates are installed from signed releases. Release builds without a configured Sparkle key and feed use manual downloads from GitHub.
 
 ## Install
 
@@ -22,7 +22,7 @@ Stellar Launcher is a compact Minecraft Java launcher built on Prism Launcher’
 | Windows | Download the portable ZIP that matches your system (x86-64 or ARM64). Extract the entire ZIP before launching the included executable. |
 | Linux | Download the AppImage that matches your system (x86-64 or ARM64). Make the matching file executable with `chmod +x` and open it. The Linux builds use Ubuntu 24.04 runners, so compatibility with older distributions varies. |
 
-[Releases](https://github.com/sebastianmiletic/stellarlauncher/releases) lists published downloads. [Stellar downloads](https://github.com/sebastianmiletic/stellarlauncher/actions/workflows/stellar-downloads.yml) lists build jobs and workflow artifacts. GitHub access to the private repository is required.
+[Releases](https://github.com/sebastianmiletic/stellarlauncher/releases) lists published downloads. [Stellar downloads](https://github.com/sebastianmiletic/stellarlauncher/actions/workflows/stellar-downloads.yml) lists build jobs and workflow artifacts.
 
 ## Set up Microsoft sign-in
 
