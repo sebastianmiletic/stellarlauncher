@@ -110,7 +110,11 @@ private:
     QList<QAbstractButton*> m_tiles;
     QList<Collection> m_collections;
     QCache<QString, QPixmap> m_artwork{24 * 1024};
-    QCache<QString, QPixmap> m_thumbnails{32 * 1024};
+    struct Thumbnail {
+        QPixmap artwork;
+        QSize target;
+    };
+    QCache<QString, Thumbnail> m_thumbnails{32 * 1024};
     QSize m_detailImageSize;
     QSize m_thumbnailSize;
     QHash<QString, QSize> m_wallpaperDimensions;

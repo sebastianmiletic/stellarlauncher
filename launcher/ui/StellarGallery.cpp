@@ -153,6 +153,12 @@ QImage readWallpaper(const QString& path, const QSize& bounds, bool cover = fals
     return image.scaled(bounds.boundedTo(image.size()), Qt::KeepAspectRatio, Qt::SmoothTransformation);
 }
 
+const QPixmap& wallpaperPlaceholder()
+{
+    static const QPixmap preview = QPixmap::fromImage(readWallpaper(":/stellar-gallery/fallback.jpg", QSize(640, 400)));
+    return preview;
+}
+
 int pixmapKiB(const QImage& image)
 {
     return qMax(1, int((qint64(image.width()) * image.height() * 4 + 1023) / 1024));
@@ -1077,6 +1083,7 @@ void StellarGallery::rebuild()
     }
     const int oldOffset = m_scroll->horizontalScrollBar()->value();
     m_slide->stop();
+    m_outlineSlide->stop();
     for (auto* tile : std::as_const(m_tiles)) {
         m_row->removeWidget(tile);
         tile->hide();
@@ -1097,7 +1104,7 @@ void StellarGallery::rebuild()
         auto version = versions.value(id).minecraft;
         const auto path = instance ? artworkPath(id, version) : QString();
         const auto* thumbnail = instance ? m_thumbnails.object(path) : nullptr;
-        const auto pixmap = thumbnail ? *thumbnail : QPixmap();
+        const QPixmap pixmap = thumbnail ? thumbnail->artwork : instance ? wallpaperPlaceholder() : QPixmap();
         if (instance && version.isEmpty())
             version = tr("Minecraft");
         auto* tile = new GalleryTile(title, version, pixmap, m_cards);
@@ -1165,10 +1172,12 @@ void StellarGallery::rebuild()
     updateAccountIcons();
     m_cards->setFixedSize(m_row->sizeHint().width(), windowHeight);
     m_row->activate();
+    for (auto* tile : std::as_const(m_tiles))
+        tile->show();
     m_scroll->horizontalScrollBar()->setValue(oldOffset);
-    scheduleThumbnails();
     const int selectedIndex = m_ids.indexOf(m_selected);
     selectIndex(selectedIndex >= 0 ? selectedIndex : 0, false);
+    scheduleThumbnails();
     if (m_detail) {
         if (m_ids.contains(m_detailId))
             refreshInstance();
@@ -2007,8 +2016,10 @@ void StellarGallery::showCreator()
         m_creation = task;
         showCreationProgress();
         connect(task, &Task::finished, this, [this, task] {
-            if (m_panel && m_panel->property("stellarCreation").toBool())
-                dismissPanel();
+            QTimer::singleShot(0, this, [this, panel = QPointer(m_panel)] {
+                if (panel && m_panel == panel && panel->property("stellarCreation").toBool())
+                    dismissPanel();
+            });
             if (task->getState() == Task::State::Failed)
                 QMessageBox::warning(window(), tr("Couldn’t create instance"), task->failReason());
             m_creation.clear();
@@ -2381,10 +2392,7 @@ void StellarGallery::scheduleThumbnails()
     if (m_tiles.isEmpty())
         return;
     const auto target = m_tiles.first()->size() * devicePixelRatioF();
-    if (target != m_thumbnailSize) {
-        m_thumbnailSize = target;
-        m_thumbnails.clear();
-    }
+    m_thumbnailSize = target;
     const int offset = m_scroll->horizontalScrollBar()->value();
     const int left = offset - windowWidth;
     const int right = offset + 2 * windowWidth;
@@ -2397,9 +2405,11 @@ void StellarGallery::scheduleThumbnails()
                 card->setArtwork({});
             continue;
         }
-        if (const auto* cached = m_thumbnails.object(path))
-            card->setArtwork(*cached);
-        else if (!path.isEmpty() && !m_pendingThumbnails.contains(path)) {
+        if (path.isEmpty())
+            continue;
+        const auto* cached = m_thumbnails.object(path);
+        card->setArtwork(cached ? cached->artwork : wallpaperPlaceholder());
+        if ((!cached || cached->target != target) && !m_pendingThumbnails.contains(path)) {
             m_pendingThumbnails.insert(path);
             paths.append(path);
         }
@@ -2420,8 +2430,11 @@ void StellarGallery::scheduleThumbnails()
     }).then(this, [this, target](const QList<QPair<QString, QImage>>& decoded) {
         for (const auto& [path, image] : decoded) {
             m_pendingThumbnails.remove(path);
-            if (target == m_thumbnailSize)
-                m_thumbnails.insert(path, new QPixmap(QPixmap::fromImage(image)), pixmapKiB(image));
+            if (target == m_thumbnailSize || !m_thumbnails.contains(path)) {
+                auto artwork = image.isNull() ? wallpaperPlaceholder() : QPixmap::fromImage(image);
+                const auto cost = image.isNull() ? 1 : pixmapKiB(image);
+                m_thumbnails.insert(path, new Thumbnail{std::move(artwork), target}, cost);
+            }
         }
         scheduleThumbnails();
     });
@@ -2451,7 +2464,9 @@ QPixmap StellarGallery::wallpaperPixmap(const QString& file)
                 refreshInstance();
         });
     }
-    return {};
+    if (const auto* thumbnail = m_thumbnails.object(file))
+        return thumbnail->artwork;
+    return wallpaperPlaceholder();
 }
 
 void StellarGallery::fetchArtwork(const Collection& collection)
@@ -2509,8 +2524,8 @@ void StellarGallery::updateArtwork()
         if (auto* instance = APPLICATION->instances()->getInstanceById(m_ids[i])) {
             const auto path = artworkPath(m_ids[i], versionOf(instance).minecraft);
             m_tiles[i]->setProperty("wallpaperPath", path);
-            if (m_thumbnails.contains(path))
-                static_cast<GalleryTile*>(m_tiles[i])->setArtwork(*m_thumbnails.object(path));
+            if (const auto* cached = m_thumbnails.object(path))
+                static_cast<GalleryTile*>(m_tiles[i])->setArtwork(cached->artwork);
         }
     }
     scheduleThumbnails();
