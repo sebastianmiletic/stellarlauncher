@@ -375,19 +375,19 @@ bool InstanceList::trashInstance(const InstanceId& id)
         return false;
     }
 
-    QString cachedGroupId = m_instanceGroupIndex[id];
+    const auto cachedGroupId = m_instanceGroupIndex.value(id);
 
     qDebug() << "Will trash instance" << id;
     QString trashedLoc;
 
-    if (m_instanceGroupIndex.remove(id) != 0) {
-        decreaseGroupCount(cachedGroupId);
-        saveGroupList();
-    }
-
     if (!FS::trash(inst->instanceRoot(), &trashedLoc)) {
         qWarning() << "Trash of instance" << id << "has not been completely successful...";
         return false;
+    }
+
+    if (m_instanceGroupIndex.remove(id) != 0) {
+        decreaseGroupCount(cachedGroupId);
+        saveGroupList();
     }
 
     qDebug() << "Instance" << id << "has been trashed by the launcher.";

@@ -60,6 +60,7 @@
 #include "ui/InstanceWindow.h"
 #include "ui/themes/ThemeManager.h"
 #include "FileSystem.h"
+#include "InstanceDirUpdate.h"
 #include "InstanceList.h"
 #include "MMCTime.h"
 #include "archive/ArchiveReader.h"
@@ -1592,40 +1593,50 @@ void StellarGallery::showActions(int index, QRect anchor)
     }
     const auto id = m_ids.value(index);
     auto* instance = APPLICATION->instances()->getInstanceById(id);
-    auto* panel = makePanel(instance ? instance->name() : tr("Library"));
-    panel->setFixedWidth(210);
-    const auto add = [this, panel](const QString& title, std::function<void()> action) {
-        auto* button = new GalleryButton(title, panel);
-        panel->layout()->addWidget(button);
+    dismissPanel();
+    auto* panel = new QFrame(this);
+    m_panel = panel;
+    panel->setObjectName("stellarPanel");
+    panel->setAccessibleName(instance ? tr("Actions for %1").arg(instance->name()) : tr("Library actions"));
+    auto* row = new QHBoxLayout(panel);
+    row->setContentsMargins(7, 7, 7, 7);
+    row->setSpacing(5);
+    const auto icon = [](const QString& name) { return QIcon(":/icons/flat_white/scalable/" + name + ".svg"); };
+    const auto add = [this, panel, row](const QIcon& image, const QString& label, std::function<void()> action) {
+        auto* button = new GalleryButton(image, {}, panel);
+        button->setAccessibleName(label);
+        button->setToolTip(label);
+        button->setFixedSize(35, 35);
+        button->setIconSize(QSize(19, 19));
+        row->addWidget(button);
         connect(button, &QPushButton::clicked, panel, [this, action = std::move(action)] {
             dismissPanel();
             action();
         });
+        return button;
     };
 
     if (instance) {
         if (instance->isRunning())
-            add(tr("Stop Minecraft"), [this, id] { showStop(id); });
+            add(style()->standardIcon(QStyle::SP_MediaStop), tr("Stop Minecraft"), [this, id] { showStop(id); });
         else
-            add(tr("Play"), [this, id] {
+            add(icon("launch"), tr("Play"), [this, id] {
                 openInstance(id);
                 playInstance(id);
             });
-        add(tr("Edit"), [this, id] { editInstance(id); });
-        auto* folder = new GalleryButton(QIcon(":/icons/flat_white/scalable/viewfolder.svg"), {}, panel);
-        folder->setAccessibleName(tr("Open instance folder"));
-        folder->setToolTip(tr("Open instance folder"));
-        folder->setFixedWidth(35);
-        qobject_cast<QVBoxLayout*>(panel->layout())->addWidget(folder, 0, Qt::AlignRight);
-        connect(folder, &QPushButton::clicked, panel, [this, id] {
-            dismissPanel();
+        add(icon("instance-settings"), tr("Edit"), [this, id] { editInstance(id); });
+        add(icon("viewfolder"), tr("Open instance folder"), [id] {
             if (const auto* current = APPLICATION->instances()->getInstanceById(id))
                 QDesktopServices::openUrl(QUrl::fromLocalFile(current->instanceRoot()));
         });
+        auto* trash = add(icon("delete"), tr("Move instance to Trash"), [this, id] { trashInstance(id); });
+        trash->setEnabled(!instance->isRunning() && !instance->launchController() && !m_launches.contains(id));
+        if (!trash->isEnabled())
+            trash->setToolTip(tr("Stop Minecraft before removing this instance"));
     } else {
-        add(tr("Create Instance"), [this] { showCreator(); });
-        add(tr("Import Instance"), [this] { showImport(); });
-        add(tr("Wallpapers"), [this] { showWallpapers({}); });
+        add(icon("new"), tr("Create Instance"), [this] { showCreator(); });
+        add(icon("export"), tr("Import Instance"), [this] { showImport(); });
+        add(icon("screenshots"), tr("Wallpapers"), [this] { showWallpapers({}); });
     }
     if (!anchor.isValid()) {
         if (m_detail) {
@@ -1638,6 +1649,32 @@ void StellarGallery::showActions(int index, QRect anchor)
         }
     }
     placePanel(anchor, m_detail && anchor.width() > 1);
+    row->itemAt(0)->widget()->setFocus(Qt::PopupFocusReason);
+}
+
+void StellarGallery::trashInstance(const QString& id)
+{
+    auto* instances = APPLICATION->instances();
+    const auto canTrash = [this, instances, id] {
+        auto* current = instances->getInstanceById(id);
+        return current && !current->isRunning() && !current->launchController() && !m_launches.contains(id);
+    };
+    if (!canTrash())
+        return;
+
+    auto* confirmation = new QMessageBox(QMessageBox::Warning, tr("Move Instance to Trash"),
+        tr("Move “%1” and its local files to the Trash?").arg(instances->getInstanceById(id)->name()),
+        QMessageBox::Cancel, window());
+    auto* move = confirmation->addButton(tr("Move to Trash"), QMessageBox::DestructiveRole);
+    confirmation->setDefaultButton(QMessageBox::Cancel);
+    confirmation->setAttribute(Qt::WA_DeleteOnClose);
+    connect(confirmation, &QMessageBox::finished, this, [this, confirmation, move, instances, id, canTrash] {
+        if (confirmation->clickedButton() != move || !canTrash() || !checkLinkedInstances(id, window(), tr("Trashing")) || !canTrash())
+            return;
+        if (!instances->trashInstance(id))
+            QMessageBox::warning(window(), tr("Couldn’t Move Instance"), tr("Stellar couldn’t move this instance to the Trash."));
+    });
+    confirmation->open();
 }
 
 void StellarGallery::editInstance(const QString& id)
