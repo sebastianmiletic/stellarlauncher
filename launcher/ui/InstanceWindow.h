@@ -65,7 +65,8 @@ class InstanceWindow : public QMainWindow, public BasePageContainer {
     QString instanceId();
 
     // save all settings and changes (prepare for launch)
-    void setStellarActions(std::function<void()> wallpaper, std::function<void()> tools);
+    void placeAbove(QWidget* anchor);
+    void setWallpaperAction(std::function<void()> wallpaper);
     bool saveAll();
 
     // request closing the window (from a page)
@@ -92,8 +93,10 @@ class InstanceWindow : public QMainWindow, public BasePageContainer {
     bool m_doNotSave = false;
     bool m_restartQueued = false;
     PageContainer* m_container = nullptr;
+    bool m_editing = false;
     QPushButton* m_wallpaperButton = nullptr;
-    QPushButton* m_toolsButton = nullptr;
+    QPushButton* m_loaderButton = nullptr;
+    void updateLoaderLabel();
     QToolButton* m_launchButton = nullptr;
     QPushButton* m_restartButton = nullptr;
     QPushButton* m_killButton = nullptr;

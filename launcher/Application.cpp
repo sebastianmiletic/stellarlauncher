@@ -842,6 +842,9 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("StellarFillScreen", false);
         m_settings->registerSetting("StellarOpeningAnimation", true);
         m_settings->registerSetting("StellarTitleScreen", true);
+        m_settings->registerSetting("StellarAccent", "silver");
+        m_settings->registerSetting("StellarTitleTint", "silver");
+        m_settings->registerSetting("StellarDiskTint", "silver");
         m_settings->registerSetting("StellarMotion", true);
         m_settings->registerSetting("StellarWallpaperCovers", QVariantMap{});
         m_settings->registerSetting("StellarWallpaperShuffle", QVariantMap{});
@@ -1705,6 +1708,8 @@ bool Application::launch(MinecraftInstance* instance,
                 instance->setProperty("stellarGalleryFullscreen", {});
             });
         }
+        if (instance->property("stellarReplayFile").isValid())
+            connect(controller, &LaunchController::finished, this, [instance] { instance->setProperty("stellarReplayFile", {}); });
         connect(controller, &LaunchController::finished, this, &Application::controllerFinished);
         if (instance->property("stellarLaunchState").isValid()) {
             connect(controller, &LaunchController::finished, this, [instance] {
@@ -1866,7 +1871,7 @@ ViewLogWindow* Application::showLogWindow()
     return m_viewLogWindow;
 }
 
-InstanceWindow* Application::showInstanceWindow(MinecraftInstance* instance, const QString& page)
+InstanceWindow* Application::showInstanceWindow(MinecraftInstance* instance, const QString& page, QWidget* anchor)
 {
     if (!instance) {
         return nullptr;
@@ -1886,10 +1891,12 @@ InstanceWindow* Application::showInstanceWindow(MinecraftInstance* instance, con
         }
 #endif
 
+        if (anchor || page == "console")
+            window->placeAbove(anchor);
         window->raise();
         window->activateWindow();
     } else {
-        window = new InstanceWindow(instance, page);
+        window = new InstanceWindow(instance, page, anchor);
         m_openWindows++;
         connect(window, &InstanceWindow::isClosing, this, [this, instance] {
             instance->setWindow(nullptr);

@@ -2,6 +2,7 @@
 package app.stellar.client.mixin;
 
 import app.stellar.client.Performance;
+import app.stellar.client.ReplayBridge;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
 import org.spongepowered.asm.mixin.Mixin;
@@ -13,6 +14,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 abstract class RenderMixin {
     @Inject(method = "render", at = @At("TAIL"))
     private void stellar$sampleFrame(CallbackInfo callback) {
-        Performance.frame(Minecraft.getInstance());
+        var game = Minecraft.getInstance();
+        Performance.frame(game);
+        ReplayBridge.openWhenReady(game);
     }
 }

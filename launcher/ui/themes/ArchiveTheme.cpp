@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "ArchiveTheme.h"
+#include "Application.h"
+#include "settings/SettingsObject.h"
+#include "ui/themes/StellarAccent.h"
 
 QPalette ArchiveTheme::colorScheme()
 {
@@ -11,7 +14,7 @@ QPalette ArchiveTheme::colorScheme()
     p.setColor(QPalette::Text, QColor("#eeeeee"));
     p.setColor(QPalette::Button, QColor("#242424"));
     p.setColor(QPalette::ButtonText, QColor("#eeeeee"));
-    p.setColor(QPalette::Highlight, QColor("#eaeaea"));
+    p.setColor(QPalette::Highlight, stellarAccent(APPLICATION->settings()->get("StellarAccent").toString()));
     p.setColor(QPalette::HighlightedText, QColor("#151515"));
     p.setColor(QPalette::Link, QColor("#e0e0e0"));
     p.setColor(QPalette::ToolTipBase, QColor("#292929"));
@@ -32,7 +35,7 @@ QString ArchiveTheme::appStyleSheet()
         QToolBar#mainToolBar QToolButton#archiveAccountsButton { padding: 2px 4px; }
         QToolButton:hover { background: #292929; }
         QToolButton:pressed, QToolButton:checked { background: #363636; }
-        QToolButton:focus, QPushButton:focus { border: 1px solid #e0e0e0; }
+        QToolButton:focus, QPushButton:focus { border: 1px solid %1; }
         QToolButton:disabled, QPushButton:disabled { color: #929292; }
         QToolBar#instanceToolBar QToolButton#actionLaunchInstance { background: #303030; color: #f2f2f2; border-color: #777777; font-weight: 600; padding: 7px 12px; }
         QToolBar#instanceToolBar QToolButton#actionLaunchInstance:hover { background: #424242; border-color: #a0a0a0; }
@@ -61,11 +64,13 @@ QString ArchiveTheme::appStyleSheet()
         QMenuBar { background: #161616; color: #eeeeee; }
         QMenuBar::item:selected { background: #363636; }
         QToolTip { background: #242424; color: #eeeeee; border: 1px solid #484848; padding: 4px; }
+        QScrollBar:vertical { width: 0px; border: none; }
+        QScrollBar:horizontal { height: 0px; border: none; }
         QTabBar::tab { padding: 6px 12px; }
         QStatusBar { border-top: 1px solid #303030; color: #adadad; padding: 2px 6px; }
         QToolBar#mainToolBar::handle, QToolBar#instanceToolBar::handle { background: transparent; }
         QStatusBar::item { border: none; }
         QLabel#archiveWordmark { font-size: 13px; font-weight: 600; padding-right: 4px; }
         QWidget#archivePage { background: #101010; }
-    )");
+    )").arg(stellarAccent(APPLICATION->settings()->get("StellarAccent").toString()).name());
 }

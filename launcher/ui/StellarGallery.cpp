@@ -12,6 +12,8 @@
 #include <QBoxLayout>
 #include <QGridLayout>
 #include <QDir>
+#include <QDialog>
+#include <QFormLayout>
 #include <QDirListing>
 #include <QDynamicPropertyChangeEvent>
 #include <QFileDialog>
@@ -56,6 +58,7 @@
 
 #include "Application.h"
 #include "ui/InstanceWindow.h"
+#include "ui/themes/ThemeManager.h"
 #include "FileSystem.h"
 #include "InstanceList.h"
 #include "MMCTime.h"
@@ -453,7 +456,7 @@ protected:
     {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
-        painter.setPen(QPen(QColor("#e9e7f1"), 2));
+        painter.setPen(QPen(palette().color(QPalette::Active, QPalette::Highlight), 2));
         painter.drawRoundedRect(rect().adjusted(1, 1, -1, -1), 13, 13);
     }
 };
@@ -905,8 +908,8 @@ StellarGallery::StellarGallery(Actions actions, QWidget* parent)
     setStyleSheet("QWidget#stellarGallery { background: #141416; }"
                   "QFrame#stellarPanel { background: #1c1c20; border: 1px solid #37363d; border-radius: 14px; }"
                   "QLabel#stellarHeading { font-size: 17px; font-weight: 600; }"
-                  "QPushButton[stellarPrimary=true] { background: #e9e7f1; color: #18171c; }"
-                  "QPushButton[stellarPrimary=true]:hover { background: #f5f3fb; }"
+                  "QPushButton[stellarPrimary=true] { background: palette(highlight); color: palette(highlighted-text); }"
+                  "QPushButton[stellarPrimary=true]:hover { background: palette(highlight); }"
                   "QPushButton[stellarPrimary=true]:disabled { background: #29282f; color: #bcb9c5; }"
                   "QLabel#stellarInstanceName { font-size: 24px; font-weight: 650; }"
                   "QLabel#stellarInstanceInfo { font-size: 12px; color: #bcb9c5; }"
@@ -1566,6 +1569,16 @@ void StellarGallery::showActions(int index, QRect anchor)
                 playInstance(id);
             });
         add(tr("Edit"), [this, id] { editInstance(id); });
+        auto* folder = new GalleryButton(QIcon(":/icons/flat_white/scalable/viewfolder.svg"), {}, panel);
+        folder->setAccessibleName(tr("Open instance folder"));
+        folder->setToolTip(tr("Open instance folder"));
+        folder->setFixedWidth(35);
+        qobject_cast<QVBoxLayout*>(panel->layout())->addWidget(folder, 0, Qt::AlignRight);
+        connect(folder, &QPushButton::clicked, panel, [this, id] {
+            dismissPanel();
+            if (const auto* current = APPLICATION->instances()->getInstanceById(id))
+                QDesktopServices::openUrl(QUrl::fromLocalFile(current->instanceRoot()));
+        });
     } else {
         add(tr("Create Instance"), [this] { showCreator(); });
         add(tr("Import Instance"), [this] { showImport(); });
@@ -1589,74 +1602,14 @@ void StellarGallery::editInstance(const QString& id)
     auto* instance = APPLICATION->instances()->getInstanceById(id);
     if (!instance)
         return;
-    auto* editor = APPLICATION->showInstanceWindow(instance, "version");
-    const auto returnToLibrary = [gallery = QPointer(this), editor = QPointer(editor)](auto show) {
+    auto* editor = APPLICATION->showInstanceWindow(instance, "version", window());
+    editor->setWallpaperAction([gallery = QPointer(this), editor = QPointer(editor), id] {
         if (gallery && editor && editor->close()) {
             gallery->window()->raise();
             gallery->window()->activateWindow();
-            show(gallery.data());
-        }
-    };
-    editor->setStellarActions(
-        [returnToLibrary, id] { returnToLibrary([id](auto* gallery) { gallery->showWallpapers(id); }); },
-        [returnToLibrary, id] { returnToLibrary([id](auto* gallery) { gallery->showContent(id); }); });
-}
-
-void StellarGallery::showContent(const QString& id)
-{
-    auto* panel = makePanel(tr("Stellar Tools"));
-    panel->setFixedWidth(300);
-    auto* folder = new GalleryButton(tr("Open instance folder"), panel);
-    panel->layout()->addWidget(folder);
-    connect(folder, &QPushButton::clicked, panel, [id] {
-        if (const auto* instance = APPLICATION->instances()->getInstanceById(id))
-            QDesktopServices::openUrl(QUrl::fromLocalFile(instance->instanceRoot()));
-    });
-    auto* look = new GalleryButton(tr("Enable Stellar title screen"), panel);
-    panel->layout()->addWidget(look);
-    connect(look, &QPushButton::clicked, panel, [this, id] {
-        dismissPanel();
-        if (auto* instance = APPLICATION->instances()->getInstanceById(id)) {
-            if (instance->isRunning() || !StellarClient::hasSupportedTitle(StellarClient::versions(instance).value("net.minecraft"))) {
-                QMessageBox::information(this, tr("Stellar title screen"),
-                                         tr("With Minecraft closed, select a Java release from 1.21.9 through 26.3."));
-                return;
-            }
-            const auto result = StellarClient::prepareTitle(instance, true);
-            if (result)
-                QMessageBox::information(this, tr("Stellar title screen"), tr("The Stellar title screen will appear next time you play."));
-            else
-                QMessageBox::warning(this, tr("Stellar title screen"), result.error());
+            gallery->showWallpapers(id);
         }
     });
-    auto* client = new GalleryButton(tr("Install in-game tools"), panel);
-    panel->layout()->addWidget(client);
-    connect(client, &QPushButton::clicked, panel, [this, id] {
-        auto* instance = APPLICATION->instances()->getInstanceById(id);
-        if (!instance)
-            return;
-        const auto versions = StellarClient::versions(instance);
-        if (versions.value("net.minecraft") != "26.3" ||
-            QVersionNumber::fromString(versions.value("net.fabricmc.fabric-loader")) < QVersionNumber(0, 19, 5)) {
-            QMessageBox::information(this, tr("Stellar in-game tools"), tr("Use Minecraft Java 26.3 with Fabric Loader 0.19.5 or newer."));
-            return;
-        }
-        if (instance->isRunning()) {
-            QMessageBox::information(this, tr("Stellar in-game tools"), tr("Close Minecraft before installing the Stellar Client mod."));
-            return;
-        }
-        const auto installed = StellarClient::installTools(instance);
-        if (installed) {
-            dismissPanel();
-            QMessageBox::information(this, tr("Stellar in-game tools"), tr("Open Stellar on Minecraft’s title or pause menu."));
-        } else {
-            QMessageBox::warning(this, tr("Stellar in-game tools"), installed.error());
-        }
-    });
-    auto* settings = new GalleryButton(tr("Mod Settings"), panel);
-    panel->layout()->addWidget(settings);
-    connect(settings, &QPushButton::clicked, panel, [this] { showModSettings(); });
-    placePanel();
 }
 
 void StellarGallery::showImport()
@@ -2099,77 +2052,112 @@ void StellarGallery::showAccounts()
 
 void StellarGallery::showPreferences()
 {
-    auto* panel = makePanel(tr("General settings"));
-    panel->setFixedWidth(352);
-    auto* layout = qobject_cast<QVBoxLayout*>(panel->layout());
-    auto* row = new QHBoxLayout;
-    row->addWidget(new QLabel(tr("Launch indicator"), panel));
-    auto* animation = new QComboBox(panel);
-    animation->setAccessibleName(tr("Launch indicator"));
-    animation->addItem(tr("Subtle progress bar"), "progress");
-    animation->addItem(tr("Wallpaper wave"), "wave");
-    animation->addItem(tr("Wallpaper fade"), "fade");
-    animation->addItem(tr("Horizontal wipe"), "wipe");
-    animation->addItem(tr("Iris reveal"), "iris");
-    animation->addItem(tr("Status only"), "off");
-    animation->setCurrentIndex(std::max(0, animation->findData(APPLICATION->settings()->get("StellarLaunchAnimation"))));
-    connect(animation, &QComboBox::currentIndexChanged, panel, [animation] {
-        APPLICATION->settings()->set("StellarLaunchAnimation", animation->currentData());
-    });
-    row->addWidget(animation, 1);
-    layout->addLayout(row);
-    const auto option = [panel, layout](const QString& text, const QString& setting) {
-        auto* checkbox = new QCheckBox(text, panel);
-        checkbox->setChecked(APPLICATION->settings()->get(setting).toBool());
-        layout->addWidget(checkbox);
-        QObject::connect(checkbox, &QCheckBox::toggled, panel, [setting](bool value) { APPLICATION->settings()->set(setting, value); });
-    };
-    option(tr("Fill screen when Minecraft opens"), "StellarFillScreen");
-    option(tr("Animate app opening"), "StellarOpeningAnimation");
-    option(tr("Use Stellar title on first Minecraft launch"), "StellarTitleScreen");
-    option(tr("Enable motion effects"), "StellarMotion");
-    auto* mods = new GalleryButton(tr("Mod Settings"), panel);
-    layout->addWidget(mods);
-    connect(mods, &QPushButton::clicked, panel, [this] { showModSettings(); });
-    auto* microsoft = new GalleryButton(tr("Microsoft application ID…"), panel);
-    layout->addWidget(microsoft);
-    connect(microsoft, &QPushButton::clicked, panel, [this] {
-        dismissPanel();
-        MSALoginDialog::configureMicrosoftApplication(this);
-    });
-    placePanel();
-}
+    dismissPanel();
+    if (m_preferences) {
+        m_preferences->raise();
+        m_preferences->activateWindow();
+        return;
+    }
+    auto* preferences = new QDialog(window(), Qt::Dialog | Qt::FramelessWindowHint);
+    m_preferences = preferences;
+    preferences->setAttribute(Qt::WA_DeleteOnClose);
+    preferences->setWindowTitle(tr("General Settings"));
+    preferences->setFixedSize(windowSize);
+    QPainterPath outline;
+    outline.addRoundedRect(preferences->rect(), cornerRadius, cornerRadius);
+    preferences->setMask(QRegion(outline.toFillPolygon().toPolygon()));
+    preferences->move(window()->frameGeometry().topLeft());
+    auto* shell = new QVBoxLayout(preferences);
+    shell->setContentsMargins(18, 10, 18, 13);
+    shell->setSpacing(10);
+    auto* header = new QHBoxLayout;
+    auto* title = new QLabel(tr("General Settings"), preferences);
+    title->setStyleSheet("font-size: 17px; font-weight: 600;");
+    header->addWidget(title, 1);
+    auto* close = new GalleryButton(QStringLiteral("×"), preferences);
+    close->setAccessibleName(tr("Close settings"));
+    close->setFixedWidth(34);
+    header->addWidget(close);
+    shell->addLayout(header);
+    connect(close, &QPushButton::clicked, preferences, &QDialog::close);
+    auto* shortcut = new QShortcut(QKeySequence::Close, preferences);
+    connect(shortcut, &QShortcut::activated, preferences, &QDialog::close);
 
-void StellarGallery::showModSettings()
-{
-    auto* panel = makePanel(tr("Mod Settings"));
-    panel->setFixedWidth(352);
-    auto* layout = qobject_cast<QVBoxLayout*>(panel->layout());
-    auto* row = new QHBoxLayout;
-    row->addWidget(new QLabel(tr("Library loader filter"), panel));
-    auto* filter = new QComboBox(panel);
-    filter->setAccessibleName(tr("Library loader filter"));
-    filter->addItem(tr("All loaders"), QString());
-    filter->addItem(tr("Vanilla"), "Vanilla");
-    for (const auto* loader : {"Fabric", "Forge", "NeoForge", "Quilt", "LiteLoader"})
-        filter->addItem(QString::fromLatin1(loader), QString::fromLatin1(loader));
-    filter->setCurrentIndex(qMax(0, filter->findData(APPLICATION->settings()->get("StellarLoaderFilter"))));
-    connect(filter, &QComboBox::currentIndexChanged, panel, [this, filter] {
-        APPLICATION->settings()->set("StellarLoaderFilter", filter->currentData());
-        rebuild();
+    auto* columns = new QHBoxLayout;
+    columns->setSpacing(22);
+    shell->addLayout(columns, 1);
+    const auto section = [preferences, columns](const QString& heading) {
+        auto* box = new QWidget(preferences);
+        auto* layout = new QVBoxLayout(box);
+        layout->setContentsMargins(0, 4, 0, 2);
+        layout->setSpacing(8);
+        auto* label = new QLabel(heading, box);
+        label->setStyleSheet("font-weight: 600; color: #dedbe7;");
+        layout->addWidget(label);
+        columns->addWidget(box, 1);
+        return layout;
+    };
+    auto* appearance = section(tr("Appearance"));
+    auto* behavior = section(tr("Launcher"));
+    const auto select = [preferences](QVBoxLayout* group, const QString& label, const QString& key,
+                                     const QList<QPair<QString, QString>>& options, const std::function<void()>& changed = {}) {
+        auto* row = new QHBoxLayout;
+        auto* name = new QLabel(label, preferences);
+        auto* field = new QComboBox(preferences);
+        field->setAccessibleName(label);
+        name->setBuddy(field);
+        for (const auto& [name, id] : options)
+            field->addItem(name, id);
+        field->setCurrentIndex(qMax(0, field->findData(APPLICATION->settings()->get(key))));
+        connect(field, &QComboBox::currentIndexChanged, preferences, [field, key, changed] {
+            APPLICATION->settings()->set(key, field->currentData());
+            if (changed)
+                changed();
+        });
+        row->addWidget(name);
+        row->addStretch(1);
+        row->addWidget(field, 1);
+        group->addLayout(row);
+    };
+    const auto check = [preferences](QVBoxLayout* group, const QString& label, const QString& key) {
+        auto* button = new QCheckBox(label, preferences);
+        button->setChecked(APPLICATION->settings()->get(key).toBool());
+        connect(button, &QCheckBox::toggled, preferences, [key](bool value) { APPLICATION->settings()->set(key, value); });
+        group->addWidget(button);
+    };
+
+    const QList<QPair<QString, QString>> colors{{tr("Silver"), "silver"}, {tr("Purple"), "violet"},
+                                               {tr("Ice Blue"), "ice"}, {tr("Amber"), "amber"}};
+    select(appearance, tr("Launcher accent"), "StellarAccent", colors, [this] {
+        APPLICATION->themeManager()->setApplicationTheme("archive");
+        m_outline->update();
     });
-    row->addWidget(filter, 1);
-    layout->addLayout(row);
-    auto* matching = new QCheckBox(tr("Update matching mods when switching versions"), panel);
-    matching->setChecked(APPLICATION->settings()->get("StellarAutoMatchMods").toBool());
-    layout->addWidget(matching);
-    connect(matching, &QCheckBox::toggled, panel, [](bool value) {
-        APPLICATION->settings()->set("StellarAutoMatchMods", value);
-    });
+    select(appearance, tr("Minecraft title"), "StellarTitleTint", colors);
+    select(appearance, tr("Black hole disk"), "StellarDiskTint", colors);
+    auto* hint = new QLabel(tr("Minecraft colors apply on the next launch. Disk colors require Java Edition 26.3."), preferences);
+    hint->setWordWrap(true);
+    hint->setStyleSheet("color: #aeabb7;");
+    appearance->addWidget(hint);
+    check(appearance, tr("Use the Stellar Minecraft title screen"), "StellarTitleScreen");
+    check(appearance, tr("Enable motion effects"), "StellarMotion");
+    check(appearance, tr("Animate when Stellar opens"), "StellarOpeningAnimation");
+    appearance->addStretch();
+
+    select(behavior, tr("Launch indicator"), "StellarLaunchAnimation",
+           {{tr("Subtle progress"), "progress"}, {tr("Wallpaper wave"), "wave"}, {tr("Wallpaper fade"), "fade"},
+            {tr("Horizontal wipe"), "wipe"}, {tr("Iris reveal"), "iris"}, {tr("Status only"), "off"}});
+    select(behavior, tr("Library loader filter"), "StellarLoaderFilter",
+           {{tr("All loaders"), ""}, {tr("Vanilla"), "Vanilla"}, {"Fabric", "Fabric"}, {"Forge", "Forge"},
+            {"NeoForge", "NeoForge"}, {"Quilt", "Quilt"}, {"LiteLoader", "LiteLoader"}}, [this] { rebuild(); });
+    check(behavior, tr("Fill screen when Minecraft opens"), "StellarFillScreen");
+    check(behavior, tr("Match mods when switching versions"), "StellarAutoMatchMods");
+    auto* account = new GalleryButton(tr("Microsoft application ID…"), preferences);
+    behavior->addWidget(account);
+    connect(account, &QPushButton::clicked, preferences, [preferences] { MSALoginDialog::configureMicrosoftApplication(preferences); });
 #ifdef Q_OS_MACOS
-    auto* compact = new GalleryButton(tr("Deduplicate identical mods"), panel);
-    layout->addWidget(compact);
-    connect(compact, &QPushButton::clicked, panel, [this, compact] {
+    auto* compact = new GalleryButton(tr("Deduplicate identical mods"), preferences);
+    behavior->addWidget(compact);
+    connect(compact, &QPushButton::clicked, preferences, [this, compact] {
         QList<QDir> allMods;
         QList<QDir> inactiveMods;
         auto* instances = APPLICATION->instances();
@@ -2183,16 +2171,17 @@ void StellarGallery::showModSettings()
         compact->setEnabled(false);
         compact->setText(tr("Looking for matching mods…"));
         QtConcurrent::run([allMods, inactiveMods] { return StellarMods::shareCopies(allMods, inactiveMods); })
-            .then(this, [guarded = QPointer(compact)](qsizetype count) {
-                if (!guarded)
-                    return;
-                guarded->setText(count ? tr("Deduplicated %n mod file(s)", nullptr, int(count))
+            .then(compact, [compact](qsizetype count) {
+                compact->setText(count ? tr("Deduplicated %n mod file(s)", nullptr, int(count))
                                        : tr("No matching mod files to deduplicate"));
-                guarded->setEnabled(true);
+                compact->setEnabled(true);
             });
     });
 #endif
-    placePanel();
+    behavior->addStretch();
+    preferences->show();
+    preferences->raise();
+    preferences->activateWindow();
 }
 
 QStringList StellarGallery::images(const Collection& collection) const

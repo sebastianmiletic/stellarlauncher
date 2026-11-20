@@ -38,6 +38,7 @@
 
 #include <QListView>
 #include <QModelIndex>
+#include <QSet>
 #include <QWidget>
 
 #include "ui/pages/BasePageContainer.h"
@@ -58,6 +59,7 @@ class PageContainer : public QWidget, public BasePageContainer {
    public:
     explicit PageContainer(BasePageProvider* pageProvider, QString defaultId = QString(), QWidget* parent = nullptr, bool scrollPages = false);
     void useStellarSidebar();
+    void setHiddenPages(QSet<QString> ids);
     ~PageContainer() override = default;
 
     void addButtons(QWidget* buttons);

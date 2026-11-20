@@ -63,18 +63,29 @@ class PageEntryFilterModel : public QSortFilterProxyModel {
    public:
     explicit PageEntryFilterModel(QObject* parent = nullptr) : QSortFilterProxyModel(parent) {}
 
+    void setHiddenPages(QSet<QString> ids)
+    {
+        if (m_hiddenPages == ids)
+            return;
+        m_hiddenPages = std::move(ids);
+        invalidate();
+    }
+
    protected:
     bool filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const override
     {
         const QString pattern = filterRegularExpression().pattern();
         auto* const model = static_cast<PageModel*>(sourceModel());
         auto* const page = model->pages().at(sourceRow);
-        if (!page->shouldDisplay()) {
+        if (m_hiddenPages.contains(page->id()) || !page->shouldDisplay()) {
             return false;
         }
         // Regular contents check, then check page-filter.
         return QSortFilterProxyModel::filterAcceptsRow(sourceRow, sourceParent);
     }
+
+private:
+    QSet<QString> m_hiddenPages;
 };
 
 PageContainer::PageContainer(BasePageProvider* pageProvider, QString defaultId, QWidget* parent, bool scrollPages)
@@ -194,11 +205,17 @@ void PageContainer::createUI()
     setLayout(m_layout);
 }
 
+void PageContainer::setHiddenPages(QSet<QString> ids)
+{
+    static_cast<PageEntryFilterModel*>(m_proxyModel)->setHiddenPages(std::move(ids));
+}
+
 void PageContainer::useStellarSidebar()
 {
     m_pageList->setObjectName("stellarEditorSidebar");
     m_pageList->setAccessibleName(tr("Instance editor sections"));
-    m_pageList->setFixedWidth(156);
+    m_pageList->setFixedWidth(170);
+    m_pageList->setIconSize(QSize(18, 18));
     m_layout->setHorizontalSpacing(13);
 }
 

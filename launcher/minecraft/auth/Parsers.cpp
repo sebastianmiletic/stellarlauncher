@@ -317,6 +317,7 @@ Result<> parseMinecraftProfileMojang(const QByteArray& data, MinecraftProfile& o
         if (idx->isObject()) {
             if (idx.key() == "SKIN") {
                 auto skin = idx->toObject();
+                skinOut.variant = "CLASSIC";
                 TRY_INTO(skinOut.url, Json::requireString(skin, "url"))
                 skinOut.url.replace("http://textures.minecraft.net", "https://textures.minecraft.net");
 

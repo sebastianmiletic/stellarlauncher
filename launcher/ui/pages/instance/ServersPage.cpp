@@ -36,6 +36,14 @@
  */
 
 #include "ServersPage.h"
+
+#include <QDialog>
+#include <QComboBox>
+#include <QLineEdit>
+#include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QPersistentModelIndex>
+#include <QPushButton>
 #include "Application.h"
 #include "ServerPingTask.h"
 #include "ui/dialogs/CustomMessageBox.h"
@@ -573,7 +581,7 @@ ServersPage::ServersPage(MinecraftInstance* inst, QWidget* parent) : QMainWindow
     ui->setupUi(this);
 
     m_model = new ServersModel(inst->gameRoot(), this);
-    ui->serversView->setIconSize(QSize(64, 64));
+    ui->serversView->setIconSize(QSize(34, 34));
     ui->serversView->setModel(m_model);
     ui->serversView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(ui->serversView, &QTreeView::customContextMenuRequested, this, &ServersPage::ShowContextMenu);
@@ -596,9 +604,6 @@ ServersPage::ServersPage(MinecraftInstance* inst, QWidget* parent) : QMainWindow
     connect(m_model, &QAbstractItemModel::rowsRemoved, this, &ServersPage::selectionChanged);
     connect(m_model, &QAbstractItemModel::modelReset, this, &ServersPage::selectionChanged);
     connect(m_inst, &MinecraftInstance::runningStatusChanged, this, &ServersPage::runningStateChanged);
-    connect(ui->nameLine, &QLineEdit::textEdited, this, &ServersPage::nameEdited);
-    connect(ui->addressLine, &QLineEdit::textEdited, this, &ServersPage::addressEdited);
-    connect(ui->resourceComboBox, &QComboBox::currentIndexChanged, this, &ServersPage::resourceIndexChanged);
 
     m_locked = m_inst->isRunning();
     if (m_locked) {
@@ -622,8 +627,8 @@ void ServersPage::retranslate()
 void ServersPage::ShowContextMenu(const QPoint& pos)
 {
     auto* menu = ui->toolBar->createContextMenu(this, tr("Context menu"));
-    menu->exec(ui->serversView->mapToGlobal(pos));
-    delete menu;
+    connect(menu, &QMenu::aboutToHide, menu, &QMenu::deleteLater);
+    menu->popup(ui->serversView->viewport()->mapToGlobal(pos));
 }
 
 QMenu* ServersPage::createPopupMenu()
@@ -659,47 +664,18 @@ void ServersPage::selectionChanged()
     updateState();
 }
 
-void ServersPage::nameEdited(const QString& name)
-{
-    m_model->setName(currentServer, name);
-}
-
-void ServersPage::addressEdited(const QString& address)
-{
-    m_model->setAddress(currentServer, address);
-}
-
-void ServersPage::resourceIndexChanged(int index)
-{
-    auto acceptsTextures = Server::AcceptsTextures(index);
-    m_model->setAcceptsTextures(currentServer, acceptsTextures);
-}
-
 void ServersPage::updateState()
 {
     auto* server = m_model->at(currentServer);
     const auto selectedRows = ui->serversView->selectionModel()->selectedRows();
     const bool multipleSelection = selectedRows.size() > 1;
 
-    bool serverEditEnabled = (server != nullptr) && !m_locked && !multipleSelection;
-    ui->addressLine->setEnabled(serverEditEnabled);
-    ui->nameLine->setEnabled(serverEditEnabled);
-    ui->resourceComboBox->setEnabled(serverEditEnabled);
+    const bool serverEditEnabled = server && !m_locked && !multipleSelection && !selectedRows.isEmpty();
+    ui->actionEdit->setEnabled(serverEditEnabled);
     ui->actionMove_Down->setEnabled(serverEditEnabled);
     ui->actionMove_Up->setEnabled(serverEditEnabled);
     ui->actionRemove->setEnabled(!m_locked && !selectedRows.isEmpty());
     ui->actionJoin->setEnabled(serverEditEnabled);
-
-    if (server) {
-        ui->addressLine->setText(server->m_address);
-        ui->nameLine->setText(server->m_name);
-        ui->resourceComboBox->setCurrentIndex(static_cast<int>(server->m_acceptsTextures));
-    } else {
-        ui->addressLine->setText(QString());
-        ui->nameLine->setText(QString());
-        ui->resourceComboBox->setCurrentIndex(0);
-    }
-
     ui->actionAdd->setDisabled(m_locked);
 }
 
@@ -718,14 +694,59 @@ void ServersPage::closedImpl()
 
 void ServersPage::on_actionAdd_triggered()
 {
-    int position = m_model->addEmptyRow(currentServer + 1);
-    if (position < 0) {
+    showServerForm({});
+}
+
+void ServersPage::on_actionEdit_triggered()
+{
+    showServerForm(m_model->index(currentServer, 0));
+}
+
+void ServersPage::showServerForm(const QModelIndex& row)
+{
+    if (m_locked)
         return;
-    }
-    // select the new row
-    ui->serversView->selectionModel()->setCurrentIndex(
-        m_model->index(position), QItemSelectionModel::SelectCurrent | QItemSelectionModel::Clear | QItemSelectionModel::Rows);
-    currentServer = position;
+    const bool editing = row.isValid();
+    const QPersistentModelIndex existing(row);
+    const auto* server = editing ? m_model->at(row.row()) : nullptr;
+    auto* dialog = new QDialog(this);
+    dialog->setWindowTitle(editing ? tr("Edit Server") : tr("Add Server"));
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    auto* form = new QFormLayout(dialog);
+    auto* name = new QLineEdit(server ? server->m_name : QString(), dialog);
+    auto* address = new QLineEdit(server ? server->m_address : QString(), dialog);
+    address->setPlaceholderText(tr("Hostname or IP address"));
+    auto* packs = new QComboBox(dialog);
+    packs->addItems({tr("Ask to download"), tr("Always download"), tr("Never download")});
+    if (server)
+        packs->setCurrentIndex(static_cast<int>(server->m_acceptsTextures));
+    form->addRow(tr("Name"), name);
+    form->addRow(tr("Address"), address);
+    form->addRow(tr("Resource packs"), packs);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, dialog);
+    form->addRow(buttons);
+    auto* save = buttons->button(QDialogButtonBox::Save);
+    save->setEnabled(!address->text().trimmed().isEmpty());
+    connect(address, &QLineEdit::textChanged, save, [save](const QString& value) { save->setEnabled(!value.trimmed().isEmpty()); });
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::accepted, dialog, [this, dialog, editing, existing, name, address, packs] {
+        const auto host = address->text().trimmed();
+        if (host.isEmpty() || m_locked || (editing && !existing.isValid()))
+            return;
+        const int position = editing ? existing.row() : m_model->addEmptyRow(currentServer + 1);
+        if (position < 0)
+            return;
+        const auto title = name->text().trimmed();
+        m_model->setName(position, title.isEmpty() ? host : title);
+        m_model->setAddress(position, host);
+        m_model->setAcceptsTextures(position, static_cast<Server::AcceptsTextures>(packs->currentIndex()));
+        ui->serversView->selectionModel()->setCurrentIndex(
+            m_model->index(position, 0), QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        dialog->accept();
+    });
+    dialog->setMinimumWidth(340);
+    name->setFocus();
+    dialog->open();
 }
 
 void ServersPage::on_actionRemove_triggered()

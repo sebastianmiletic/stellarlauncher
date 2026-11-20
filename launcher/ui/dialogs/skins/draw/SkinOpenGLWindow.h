@@ -23,6 +23,7 @@
 #include <QOpenGLShaderProgram>
 #include <QOpenGLTexture>
 #include <QOpenGLWindow>
+#include <QVariantAnimation>
 #include <QVector2D>
 #include "minecraft/skins/SkinModel.h"
 #include "ui/dialogs/skins/draw/BoxGeometry.h"
@@ -44,6 +45,7 @@ class SkinOpenGLWindow : public QOpenGLWindow, protected QOpenGLFunctions {
     void updateScene(SkinModel* skin);
     void updateCape(const QImage& cape);
     void setElytraVisible(bool visible);
+    void face(bool back, bool animate);
 
     static bool hasOpenGL();
 
@@ -73,6 +75,7 @@ class SkinOpenGLWindow : public QOpenGLWindow, protected QOpenGLFunctions {
 
     bool m_isMousePressed = false;
     float m_distance = 48;
+    QVariantAnimation m_turn;
     float m_yaw = 90;   // Horizontal rotation angle
     float m_pitch = 0;  // Vertical rotation angle
 

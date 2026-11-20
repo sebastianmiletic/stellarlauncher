@@ -14,6 +14,7 @@
 
 class QAbstractButton;
 class QFrame;
+class QDialog;
 class QHBoxLayout;
 class QPropertyAnimation;
 class QScrollArea;
@@ -65,12 +66,10 @@ private:
     void editInstance(const QString& id);
     void showActions(int index, QRect anchor = {});
     void showPreferences();
-    void showModSettings();
     void showAccounts();
     void updateAccountIcons();
     void showCreator();
     void showCreationProgress();
-    void showContent(const QString& id);
     void showImport();
     void previewImport(const QString& source);
     void copyInstance(const QString& source, const QStringList& entries);
@@ -99,6 +98,7 @@ private:
     QMetaObject::Connection m_detailRunningChanged;
     QAbstractButton* m_accountTile = nullptr;
     QFrame* m_panel = nullptr;
+    QPointer<QDialog> m_preferences;
     QWidget* m_detail = nullptr;
     QPointer<QWidget> m_detailSlide;
     QList<QAbstractButton*> m_tiles;

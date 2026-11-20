@@ -4,6 +4,12 @@
         <file>@Launcher_AppID@.svg</file>
         <file>stellar-wallpaper.jpg</file>
         <file>archive-look.zip</file>
+        <file>stellar-title-violet.zip</file>
+        <file>stellar-title-ice.zip</file>
+        <file>stellar-title-amber.zip</file>
+        <file>stellar-disk-violet.zip</file>
+        <file>stellar-disk-ice.zip</file>
+        <file>stellar-disk-amber.zip</file>
         <file>stellar-client.jar</file>
     </qresource>
 </RCC>

@@ -28,6 +28,8 @@
 #include "minecraft/skins/SkinModel.h"
 #include "ui/dialogs/skins/draw/SkinOpenGLWindow.h"
 
+class QNetworkReply;
+
 namespace Ui {
 class SkinManageDialog;
 }
@@ -58,6 +60,11 @@ class SkinManageDialog : public QDialog, public SkinProvider {
    private:
     void setupCapes();
     void updatePreview();
+    void getSkinData(const QUrl& url, std::function<void(QNetworkReply*)> completed);
+    void findUsername(const QString& user, bool fallback = false);
+    void getUsernameTexture(const QString& user, const QString& id);
+    void finishSkinLookup(const QString& status);
+    bool selectImportedSkin(const QString& path);
 
    private:
     MinecraftAccountPtr m_acct;
@@ -65,6 +72,7 @@ class SkinManageDialog : public QDialog, public SkinProvider {
     SkinList m_list;
     QString m_selectedSkinKey;
     QHash<QString, QImage> m_capes;
+    QHash<QString, QString> m_importedUserSkins;
     QHash<QString, int> m_capesIdx;
     SkinOpenGLWindow* m_skinPreview = nullptr;
     QLabel* m_skinPreviewLabel = nullptr;

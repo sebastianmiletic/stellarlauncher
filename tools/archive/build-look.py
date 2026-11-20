@@ -61,6 +61,39 @@ def write_panorama(write):
             write(overlay + "assets/minecraft/shaders/core/" + shader, source.read_bytes())
 
 
+PALETTES = {
+    "violet": ("#c6a5fd", "#624e83", (0.82, 0.64, 1.15)),
+    "ice": ("#addcf5", "#3f6076", (0.60, 0.90, 1.12)),
+    "amber": ("#f1c48a", "#795638", (1.16, 0.81, 0.55)),
+}
+
+
+def write_color_packs(title, edition):
+    shader = (Path(__file__).with_name("panorama") / "panorama.fsh").read_text()
+    for name, (foreground, shadow, disk) in PALETTES.items():
+        for kind in ("title", "disk"):
+            output = ROOT / f"program_info/stellar-{kind}-{name}.zip"
+            version = [69, 0] if kind == "title" else [97, 1]
+            with ZipFile(output, "w") as archive:
+                def write(path, data):
+                    archive.writestr(ZipInfo(path), data, compress_type=ZIP_DEFLATED, compresslevel=9)
+
+                write("pack.mcmeta", json.dumps({"pack": {
+                    "description": f"Stellar {kind.title()} Colors",
+                    "min_format": version,
+                    "max_format": [97, 1],
+                }}))
+                if kind == "title":
+                    image = rasterize(svg(1024, 256, title.replace("#4b4b4b", shadow).replace("#f1f1f1", foreground)))
+                    for logo in ("minecraft", "minceraft"):
+                        write(f"{GUI}title/{logo}.png", image)
+                    write(f"{GUI}title/edition.png", rasterize(svg(512, 64, edition.replace("#cdcdcd", foreground))))
+                else:
+                    tint = ", ".join(map(str, disk))
+                    tinted = shader.replace("color + vec3(specks * sky)", f"color * vec3({tint}) + vec3(specks * sky)")
+                    write("assets/minecraft/shaders/core/panorama.fsh", tinted)
+
+
 def build():
     pack = ROOT / "program_info/archive-look.zip"
     with ZipFile(pack, "w") as archive:
@@ -89,7 +122,9 @@ def build():
         title_image = rasterize(svg(1024, 256, title))
         for name in ("minecraft", "minceraft"):
             write(f"{GUI}title/{name}.png", title_image)
-        write(f"{GUI}title/edition.png", rasterize(svg(512, 64, svg_text(57, 45, 32, "#cdcdcd", "MINECRAFT JAVA EDITION"))))
+        edition = svg_text(57, 45, 32, "#cdcdcd", "MINECRAFT JAVA EDITION")
+        write(f"{GUI}title/edition.png", rasterize(svg(512, 64, edition)))
+        write_color_packs(title, edition)
 
         write_panorama(write)
 

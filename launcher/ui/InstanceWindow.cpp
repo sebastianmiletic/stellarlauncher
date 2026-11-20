@@ -46,6 +46,7 @@
 #include <QPainterPath>
 #include <QShortcut>
 #include <QVBoxLayout>
+#include <QWindow>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScrollBar>
@@ -55,6 +56,8 @@
 #include "ui/StellarGallery.h"
 
 #include "InstancePageProvider.h"
+#include "minecraft/PackProfile.h"
+#include "minecraft/StellarClient.h"
 
 #include "icons/IconList.h"
 
@@ -101,7 +104,7 @@ QAccessibleInterface* editorTableAccessibility(const QString&, QObject* object)
 }
 #endif
 
-InstanceWindow::InstanceWindow(MinecraftInstance* instance, const QString& page, QWidget* parent) : QMainWindow(parent), m_instance(instance)
+InstanceWindow::InstanceWindow(MinecraftInstance* instance, const QString& page, QWidget* parent) : QMainWindow(nullptr), m_instance(instance)
 {
 #if defined(Q_OS_MACOS) && QT_VERSION < QT_VERSION_CHECK(6, 12, 1)
     static const auto installed = [] {
@@ -138,14 +141,21 @@ InstanceWindow::InstanceWindow(MinecraftInstance* instance, const QString& page,
         name->setObjectName("stellarEditorTitle");
         header->addWidget(name, 1);
         m_wallpaperButton = new QPushButton(tr("Wallpaper"), editor);
-        m_toolsButton = new QPushButton(tr("Stellar Tools"), editor);
+        m_loaderButton = new QPushButton(editor);
+        updateLoaderLabel();
+        connect(m_loaderButton, &QPushButton::clicked, this, [this] {
+            if (auto* versions = dynamic_cast<VersionPage*>(m_container->getPage("version"))) {
+                m_container->selectPage("version");
+                versions->chooseLoader();
+                updateLoaderLabel();
+            }
+        });
         auto* close = new QPushButton(QStringLiteral("×"), editor);
         close->setAccessibleName(tr("Close editor"));
         close->setFixedWidth(34);
-        for (auto* button : {m_wallpaperButton, m_toolsButton, close})
+        for (auto* button : {m_wallpaperButton, m_loaderButton, close})
             header->addWidget(button);
         m_wallpaperButton->hide();
-        m_toolsButton->hide();
         connect(close, &QPushButton::clicked, this, &InstanceWindow::close);
         for (const auto& key : {QKeySequence(Qt::Key_Escape), QKeySequence(QKeySequence::Close)}) {
             auto* shortcut = new QShortcut(key, this);
@@ -243,17 +253,48 @@ InstanceWindow::InstanceWindow(MinecraftInstance* instance, const QString& page,
         static_cast<ManagedPackPage*>(m_container->getPage("managed_pack"))->setInstanceWindow(this);
     }
 
+    placeAbove(parent);
     show();
 }
 
-void InstanceWindow::setStellarActions(std::function<void()> wallpaper, std::function<void()> tools)
+void InstanceWindow::placeAbove(QWidget* anchor)
+{
+    if (anchor) {
+        auto* library = anchor->window();
+        library->winId();
+        winId();
+        windowHandle()->setTransientParent(library->windowHandle());
+        move(library->frameGeometry().topLeft());
+    }
+    m_editing = anchor != nullptr;
+    m_loaderButton->setVisible(m_editing);
+    if (!m_editing && windowHandle())
+        windowHandle()->setTransientParent(nullptr);
+    m_container->setHiddenPages(m_editing ? QSet<QString>{"settings", "notes", "console", "logs"} : QSet<QString>{});
+}
+
+void InstanceWindow::setWallpaperAction(std::function<void()> wallpaper)
 {
     disconnect(m_wallpaperButton, nullptr, this, nullptr);
-    disconnect(m_toolsButton, nullptr, this, nullptr);
     connect(m_wallpaperButton, &QPushButton::clicked, this, std::move(wallpaper));
-    connect(m_toolsButton, &QPushButton::clicked, this, std::move(tools));
     m_wallpaperButton->show();
-    m_toolsButton->show();
+}
+
+void InstanceWindow::updateLoaderLabel()
+{
+    const auto versions = StellarClient::versions(m_instance);
+    QString loader = tr("Vanilla");
+    for (const auto& [id, label] : {std::pair{"net.fabricmc.fabric-loader", "Fabric"}, {"net.minecraftforge", "Forge"},
+                                  {"net.neoforged", "NeoForge"}, {"org.quiltmc.quilt-loader", "Quilt"},
+                                  {"com.mumfrey.liteloader", "LiteLoader"}}) {
+        const auto current = m_instance->getPackProfile()->getComponentVersion(QString::fromLatin1(id));
+        if (!current.isEmpty() || versions.contains(QString::fromLatin1(id))) {
+            loader = QString::fromLatin1(label);
+            break;
+        }
+    }
+    m_loaderButton->setText(tr("Loader: %1").arg(loader));
+    m_loaderButton->setToolTip(tr("Choose the mod loader for this instance"));
 }
 
 void InstanceWindow::on_instanceStatusChanged(BaseInstance::Status, BaseInstance::Status newStatus)
@@ -293,8 +334,8 @@ void InstanceWindow::runningStateChanged(bool running)
 {
     updateButtons();
     m_container->refreshContainer();
-    if (running) {
-        selectPage("log");
+    if (running && !m_editing) {
+        selectPage("console");
     } else if (m_restartQueued) {
         m_restartQueued = false;
         // Wait until the current launch controller has handled the stopped instance before launching again.

@@ -65,6 +65,7 @@
    <item>
     <layout class="QHBoxLayout" name="footer">
      <item><widget class="QPushButton" name="fileBtn"><property name="text"><string>Import PNG…</string></property></widget></item>
+     <item><widget class="QPushButton" name="userBtn"><property name="text"><string>Get by Username…</string></property></widget></item>
      <item><widget class="QPushButton" name="moreBtn"><property name="text"><string>•••</string></property><property name="accessibleName"><string>More skin options</string></property></widget></item>
      <item><spacer name="footerSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
      <item><widget class="QLabel" name="status"/></item>

@@ -35,6 +35,15 @@
 SkinOpenGLWindow::SkinOpenGLWindow(SkinProvider* parent, QColor color)
     : QOpenGLWindow(), QOpenGLFunctions(), m_baseColor(color), m_parent(parent)
 {
+    m_turn.setDuration(270);
+    m_turn.setEasingCurve(QEasingCurve::OutCubic);
+    connect(&m_turn, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+        const auto angle = value.toPointF();
+        m_yaw = angle.x();
+        m_pitch = angle.y();
+        if (isExposed())
+            update();
+    });
     QSurfaceFormat format = QSurfaceFormat::defaultFormat();
     format.setDepthBufferSize(24);
     setFormat(format);
@@ -78,6 +87,7 @@ SkinOpenGLWindow::~SkinOpenGLWindow()
 
 void SkinOpenGLWindow::mousePressEvent(QMouseEvent* e)
 {
+    m_turn.stop();
     // Save mouse press position
     m_mousePosition = QVector2D(e->pos());
     m_isMousePressed = true;
@@ -251,11 +261,30 @@ void SkinOpenGLWindow::paintGL()
     }
 }
 
+void SkinOpenGLWindow::face(bool back, bool animate)
+{
+    m_turn.stop();
+    const double change = std::remainder((back ? 270.0 : 90.0) - m_yaw, 360.0);
+    if (!animate || !isExposed()) {
+        m_yaw += change;
+        m_pitch = 0;
+        update();
+        return;
+    }
+    if (qAbs(change) < 0.15 && qAbs(m_pitch) < 0.15)
+        return;
+    m_turn.setStartValue(QPointF(m_yaw, m_pitch));
+    m_turn.setEndValue(QPointF(m_yaw + change, 0));
+    m_turn.start();
+}
+
 void SkinOpenGLWindow::updateScene(SkinModel* skin)
 {
     if (skin && m_scene) {
+        makeCurrent();
         m_scene->setMode(skin->getModel() == SkinModel::SLIM);
         m_scene->setSkin(skin->getTexture());
+        doneCurrent();
         update();
     }
 }
@@ -263,7 +292,11 @@ void SkinOpenGLWindow::updateCape(const QImage& cape)
 {
     if (m_scene) {
         m_scene->setCapeVisible(!cape.isNull());
-        m_scene->setCape(cape);
+        if (!cape.isNull()) {
+            makeCurrent();
+            m_scene->setCape(cape);
+            doneCurrent();
+        }
         update();
     }
 }

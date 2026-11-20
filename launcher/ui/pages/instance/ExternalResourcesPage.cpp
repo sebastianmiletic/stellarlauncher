@@ -133,6 +133,8 @@ ExternalResourcesPage::ExternalResourcesPage(MinecraftInstance* instance, Resour
     auto* selectionModel = m_ui->treeView->selectionModel();
 
     connect(selectionModel, &QItemSelectionModel::currentChanged, this, [this](const QModelIndex& current, const QModelIndex& previous) {
+        if (m_ui->frame->isHidden())
+            return;
         if (!current.isValid()) {
             m_ui->frame->clear();
             return;

@@ -396,7 +396,9 @@ void LaunchController::launchInstance()
     }
 
     if (APPLICATION->settings()->get("StellarTitleScreen").toBool()) {
-        if (const auto title = StellarClient::prepareTitle(m_instance); !title)
+        if (const auto title = StellarClient::prepareTitle(m_instance, false,
+                APPLICATION->settings()->get("StellarTitleTint").toString(),
+                APPLICATION->settings()->get("StellarDiskTint").toString()); !title)
             qWarning() << "Could not enable the Stellar title screen:" << title.error();
     }
     const QDir mods(QDir(m_instance->gameRoot()).filePath("mods"));

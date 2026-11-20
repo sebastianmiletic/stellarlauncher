@@ -49,7 +49,8 @@ inline Result<> updateBundledFile(const QString& target, const QString& resource
     return FS::write(target, bundled);
 }
 
-inline Result<> prepareTitle(MinecraftInstance* instance, bool manual = false)
+inline Result<> prepareTitle(MinecraftInstance* instance, bool manual = false,
+                             const QString& titleTint = {}, const QString& diskTint = {})
 {
     const auto version = versions(instance).value("net.minecraft");
     if (!hasSupportedTitle(version))
@@ -63,9 +64,7 @@ inline Result<> prepareTitle(MinecraftInstance* instance, bool manual = false)
             { "e136389352707b6605e5e2c701a7a10976122aa22d18418f42f6b9d7c5888b6a",
               "3965a851732038c028bc04526a29a389221e6528f63688511d2d5cbc6275661e" }))
     }
-    if (!manual && QFile::exists(marker))
-        return {};
-
+    const bool firstLaunch = !QFile::exists(marker);
     const auto options = game.filePath("options.txt");
     QByteArray contents;
     if (QFile::exists(options)) {
@@ -85,9 +84,31 @@ inline Result<> prepareTitle(MinecraftInstance* instance, bool manual = false)
         packs = selected.array();
     }
 
+    const auto original = packs;
     const QString stellar = QStringLiteral("file/Stellar Look.zip");
-    if (!packs.contains(stellar)) {
+    if ((manual || firstLaunch) && !packs.contains(stellar))
         packs.append(stellar);
+
+    const auto applyColor = [&](const QString& layer, const QString& packName, const QString& color, bool enabled) -> Result<> {
+        const QString packEntry = "file/" + packName;
+        for (qsizetype i = packs.size(); i > 0; --i) {
+            if (packs.at(i - 1) == packEntry)
+                packs.removeAt(i - 1);
+        }
+        if (!enabled || !packs.contains(stellar) || !QStringList{"violet", "ice", "amber"}.contains(color))
+            return {};
+        const auto path = game.filePath("resourcepacks/" + packName);
+        TRY_INTO(const auto bundled, FS::read(":/stellar-" + layer + "-" + color + ".zip"))
+        const auto saved = FS::read(path);
+        if (!saved || *saved != bundled) {
+            TRY(FS::write(path, bundled))
+        }
+        packs.append(packEntry);
+        return {};
+    };
+    TRY(applyColor("title", "Stellar Title Color.zip", titleTint, true))
+    TRY(applyColor("disk", "Stellar Disk Color.zip", diskTint, version == "26.3"))
+    if (packs != original) {
         const auto line = "resourcePacks:" + QJsonDocument(packs).toJson(QJsonDocument::Compact);
         if (entry == lines.end())
             lines.append(line);
@@ -97,7 +118,7 @@ inline Result<> prepareTitle(MinecraftInstance* instance, bool manual = false)
             lines.append(QByteArray());
         TRY(FS::write(options, lines.join('\n')))
     }
-    return FS::write(marker, "1\n");
+    return firstLaunch ? FS::write(marker, "1\n") : Result<>{};
 }
 
 inline Result<> installTools(MinecraftInstance* instance)
@@ -108,6 +129,7 @@ inline Result<> installTools(MinecraftInstance* instance)
     if (QFile::exists(disabled) && !QFile::exists(target) && !QFile::rename(disabled, target))
         return std::unexpected(QStringLiteral("Could not enable the installed Stellar Client mod."));
     return updateBundledFile(target, ":/stellar-client.jar",
-        { "e3a44ad86c710e1c2c0b42912f6c9febca327d3f7927218a57c8dadef0de4d59" });
+        { "e3a44ad86c710e1c2c0b42912f6c9febca327d3f7927218a57c8dadef0de4d59",
+          "b0838ec0274b5ec94b4ad6f021077c9b6cf60b977a4803b55921da32334e96cb" });
 }
 }

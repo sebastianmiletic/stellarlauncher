@@ -111,6 +111,10 @@ void LauncherPartLaunch::executeTask()
     QStringList args = instance->javaArguments();
     if (QDir(instance->gameRoot()).exists("mods/" + StellarClient::toolsJar))
         args.append("-Dstellar.skinLibrary=" + QDir(APPLICATION->settings()->get("SkinsDir").toString()).absolutePath());
+    const auto replay = instance->property("stellarReplayFile").toString();
+    instance->setProperty("stellarReplayFile", {});
+    if (!replay.isEmpty())
+        args.append("-Dstellar.replay=" + replay);
     QString allArgs = args.join(" ");
     emit logLine("Java arguments:\n  " + m_parent->censorPrivateInfo(allArgs) + "\n", MessageLevel::Launcher);
 

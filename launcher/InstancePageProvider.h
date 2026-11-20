@@ -13,6 +13,7 @@
 #include "ui/pages/instance/OtherLogsPage.h"
 #include "ui/pages/instance/ResourcePackPage.h"
 #include "ui/pages/instance/ScreenshotsPage.h"
+#include "ui/pages/instance/StellarReplaysPage.h"
 #include "ui/pages/instance/ServersPage.h"
 #include "ui/pages/instance/ShaderPackPage.h"
 #include "ui/pages/instance/TexturePackPage.h"
@@ -104,6 +105,8 @@ class InstancePageProvider : protected QObject, public BasePageProvider {
         values.append(new DeferredInstancePage("servers", tr("Servers"), "server", [instance] { return new ServersPage(instance); }));
         values.append(new DeferredInstancePage("screenshots", tr("Screenshots"), "screenshots",
             [instance] { return new ScreenshotsPage(FS::PathCombine(instance->gameRoot(), "screenshots")); }));
+        values.append(new DeferredInstancePage("stellar-replays", tr("Replays"), "screenshots",
+            [instance] { return new StellarReplaysPage(instance); }));
         values.append(new DeferredInstancePage("console", tr("Minecraft Log"), "log", [instance] { return new LogPage(instance); }));
         values.append(new DeferredInstancePage("logs", tr("Other Logs"), "log",
             [instance] { return new OtherLogsPage("logs", tr("Other Logs"), "Other-Logs", instance); }));

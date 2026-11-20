@@ -72,6 +72,7 @@
 ModFolderPage::ModFolderPage(MinecraftInstance* inst, ModFolderModel* model, QWidget* parent)
     : ExternalResourcesPage(inst, model, parent), m_model(model)
 {
+    m_ui->frame->hide();
     m_ui->actionDownloadItem->setText(tr("Download Mods"));
     m_ui->actionDownloadItem->setToolTip(tr("Download mods from online mod platforms"));
     m_ui->actionDownloadItem->setEnabled(true);

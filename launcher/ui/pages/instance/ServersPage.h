@@ -78,6 +78,7 @@ class ServersPage : public QMainWindow, public BasePage {
     void selectionChanged();
 
     void on_actionAdd_triggered();
+    void on_actionEdit_triggered();
     void on_actionRemove_triggered();
     void on_actionMove_Up_triggered();
     void on_actionMove_Down_triggered();
@@ -86,9 +87,7 @@ class ServersPage : public QMainWindow, public BasePage {
 
     void runningStateChanged(bool running);
 
-    void nameEdited(const QString& name);
-    void addressEdited(const QString& address);
-    void resourceIndexChanged(int index);
+    void showServerForm(const QModelIndex& row);
 
     void ShowContextMenu(const QPoint& pos);
 

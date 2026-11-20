@@ -63,6 +63,7 @@ class VersionPage : public QMainWindow, public BasePage {
     virtual QString helpPage() const override { return "Instance-Version"; }
     virtual bool shouldDisplay() const override;
     void retranslate() override;
+    void chooseLoader() { on_actionInstall_Loader_triggered(); }
 
    private slots:
     void on_actionChange_version_triggered();

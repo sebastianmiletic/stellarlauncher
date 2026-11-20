@@ -36,6 +36,10 @@
 #include <QMimeDatabase>
 #include <QPainter>
 #include <QUrl>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
 
 #include "Application.h"
 #include "DesktopServices.h"
@@ -159,7 +163,6 @@ SkinManageDialog::SkinManageDialog(QWidget* parent, MinecraftAccountPtr acct)
 
     auto* more = new QMenu(this);
     more->addAction(tr("Import from URL…"), this, &SkinManageDialog::on_urlBtn_clicked);
-    more->addAction(tr("Import by username…"), this, &SkinManageDialog::on_userBtn_clicked);
     more->addAction(tr("Open skins folder"), this, &SkinManageDialog::on_openDirBtn_clicked);
     more->addAction(tr("Browse skins online"), this, [] { DesktopServices::openUrl(QUrl("https://handmadeskins.com/")); });
     if (m_acct)
@@ -196,7 +199,9 @@ SkinManageDialog::~SkinManageDialog()
 
 void SkinManageDialog::selectionChanged(const QModelIndex& index)
 {
-    m_selectedSkinKey = index.data(Qt::UserRole).toString();
+    const auto selected = index.data(Qt::UserRole).toString();
+    const bool changed = m_selectedSkinKey != selected;
+    m_selectedSkinKey = selected;
     const auto* skin = getSelectedSkin();
     m_ui->applyBtn->setEnabled(m_acct && !m_acct->isActive() && skin);
     m_ui->skinName->setText(skin ? skin->name() : QString());
@@ -212,6 +217,8 @@ void SkinManageDialog::selectionChanged(const QModelIndex& index)
         : m_acct ? m_acct->accountData()->minecraftProfile.currentCape : QString();
     m_ui->capeCombo->setCurrentIndex(m_capesIdx.value(capeId));
     updatePreview();
+    if (changed && m_skinPreview)
+        m_skinPreview->face(false, APPLICATION->settings()->get("StellarMotion").toBool());
 }
 
 void SkinManageDialog::updatePreview()
@@ -326,6 +333,9 @@ void SkinManageDialog::setupCapes()
 void SkinManageDialog::on_capeCombo_currentIndexChanged(int)
 {
     updatePreview();
+    if (m_skinPreview)
+        m_skinPreview->face(!m_ui->capeCombo->currentData().toString().isEmpty(),
+                            APPLICATION->settings()->get("StellarMotion").toBool());
 }
 
 void SkinManageDialog::on_steveBtn_toggled(bool checked)
@@ -469,89 +479,128 @@ void SkinManageDialog::on_urlBtn_clicked()
 
 void SkinManageDialog::on_userBtn_clicked()
 {
-    const auto user = QInputDialog::getText(this, tr("Import skin"), tr("Minecraft username")).trimmed();
-    if (user.isEmpty()) {
-        return;
-    }
-    static const QRegularExpression username("^[A-Za-z0-9_]{1,16}$");
-    if (!username.match(user).hasMatch()) {
-        CustomMessageBox::selectable(this, tr("Import skin"), tr("Enter a valid Minecraft username."), QMessageBox::Warning)->show();
-        return;
-    }
-    QTemporaryDir download;
-    if (!download.isValid())
-        return;
-    MinecraftProfile mcProfile;
-    auto path = download.filePath(user + ".png");
-
-    NetJob::Ptr job{ new NetJob(tr("Download user skin"), APPLICATION->network(), 1) };
-    job->setAskRetry(false);
-
-    auto downloadSkin = Net::Request::makeFile(QUrl(), path);
-    // use a valid url to trick the make to actually create the task
-    // the actual url will be set in the getUUID parse function
-    auto [getProfile, a] = Net::RPC::make<bool>({ { .url = { "https://sessionserver.mojang.com/session/minecraft/profile/" } },
-                                                  [downloadSkin, &mcProfile](const auto& v) -> Result<bool> {
-                                                      TRY(Parsers::parseMinecraftProfileMojang(v, mcProfile))
-                                                      downloadSkin->setUrl(mcProfile.skin.url);
-                                                      return {};
-                                                  } });
-    auto [getUUID, b] = Net::RPC::make<bool>({ { .url = "https://api.minecraftservices.com/minecraft/profile/lookup/name/" + user },
-                                               [&getProfile](const auto& v) -> Result<bool> {
-                                                   TRY_INTO(auto root, Json::requireObject(v, "Minecraft profile lookup"))
-                                                   auto id = root["id"].toString();
-                                                   if (id.isEmpty()) {
-                                                       return std::unexpected(tr("user id is empty"));
-                                                   }
-                                                   getProfile->setUrl("https://sessionserver.mojang.com/session/minecraft/profile/" + id);
-                                                   return {};
-                                               } });
-
-    QString failReason;
-
-    connect(getUUID.get(), &Task::failed, this, [&failReason](const QString& reason) {
-        qCritical() << "Couldn't get user UUID:" << reason;
-        failReason = tr("failed to get user UUID");
-    });
-    connect(getProfile.get(), &Task::failed, this, [&failReason](const QString& reason) {
-        qCritical() << "Couldn't get user profile:" << reason;
-        failReason = tr("failed to get user profile");
-    });
-    connect(downloadSkin.get(), &Task::failed, this, [&failReason](const QString& reason) {
-        qCritical() << "Couldn't download skin:" << reason;
-        failReason = tr("failed to download skin");
-    });
-
-    job->addNetAction(getUUID);
-    job->addNetAction(getProfile);
-    job->addNetAction(downloadSkin);
-    ProgressDialog dlg(this);
-    dlg.execWithTask(job.get());
-
-    SkinModel s(path);
-    if (!s.isValid()) {
-        if (failReason.isEmpty()) {
-            failReason = tr("the skin is invalid");
+    auto* input = new QInputDialog(this);
+    input->setWindowTitle(tr("Get Skin by Username"));
+    input->setLabelText(tr("Minecraft Java username"));
+    input->setOkButtonText(tr("Get Skin"));
+    input->setAttribute(Qt::WA_DeleteOnClose);
+    connect(input, &QInputDialog::textValueSelected, this, [this](const QString& value) {
+        const auto user = value.trimmed();
+        static const QRegularExpression username("^[A-Za-z0-9_]{1,16}$");
+        if (!username.match(user).hasMatch()) {
+            m_ui->status->setText(tr("Enter a valid Java username."));
+            return;
         }
-        CustomMessageBox::selectable(this, tr("Username not found"),
-                                     tr("Unable to find the skin for '%1'\n because: %2.").arg(user, failReason), QMessageBox::Critical)
-            ->show();
-        QFile::remove(path);
-        return;
-    }
-    QString installed;
-    const auto error = m_list.installSkin(path, user + ".png", &installed);
-    if (!error.isEmpty()) {
-        CustomMessageBox::selectable(this, tr("Import skin"), error, QMessageBox::Warning)->show();
-        return;
-    }
-    s = SkinModel(installed);
-    s.setModel(mcProfile.skin.variant.toUpper() == "SLIM" ? SkinModel::SLIM : SkinModel::CLASSIC);
-    s.setURL(mcProfile.skin.url);
-    if (m_capes.contains(mcProfile.currentCape)) {
-        s.setCapeId(mcProfile.currentCape);
-    }
-    m_list.updateSkin(&s);
+        if (const auto installed = m_importedUserSkins.value(user.toLower()); selectImportedSkin(installed)) {
+            m_ui->status->setText(tr("Selected %1").arg(user));
+            return;
+        }
+        m_ui->userBtn->setEnabled(false);
+        m_ui->status->setText(tr("Looking up %1…").arg(user));
+        findUsername(user);
+    });
+    input->open();
+}
+
+void SkinManageDialog::getSkinData(const QUrl& url, std::function<void(QNetworkReply*)> completed)
+{
+    QNetworkRequest request(url);
+    request.setTransferTimeout(5500);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+    auto* reply = APPLICATION->network()->get(request);
+    connect(reply, &QNetworkReply::finished, this, [reply, completed = std::move(completed)] {
+        completed(reply);
+        reply->deleteLater();
+    });
+    connect(this, &QObject::destroyed, reply, &QNetworkReply::abort);
+    connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
+}
+
+void SkinManageDialog::finishSkinLookup(const QString& status)
+{
+    m_ui->userBtn->setEnabled(true);
+    m_ui->status->setText(status);
+}
+
+void SkinManageDialog::findUsername(const QString& user, bool fallback)
+{
+    const QString endpoint = fallback ? "https://api.mojang.com/users/profiles/minecraft/"
+                                      : "https://api.minecraftservices.com/minecraft/profile/lookup/name/";
+    getSkinData(QUrl(endpoint + user), [this, user, fallback](QNetworkReply* reply) {
+        const auto status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const auto profile = QJsonDocument::fromJson(reply->readAll()).object();
+        const auto id = profile.value("id").toString();
+        static const QRegularExpression uuid("^[0-9a-fA-F]{32}$");
+        if (reply->error() == QNetworkReply::NoError && uuid.match(id).hasMatch()) {
+            getUsernameTexture(user, id);
+        } else if (!fallback && status != 404 && status != 204) {
+            findUsername(user, true);
+        } else {
+            finishSkinLookup(status == 404 || status == 204 ? tr("Minecraft couldn’t find %1.").arg(user)
+                                                            : tr("Minecraft’s profile service didn’t respond."));
+        }
+    });
+}
+
+void SkinManageDialog::getUsernameTexture(const QString& user, const QString& id)
+{
+    getSkinData(QUrl("https://sessionserver.mojang.com/session/minecraft/profile/" + id),
+        [this, user](QNetworkReply* reply) {
+            MinecraftProfile profile;
+            if (reply->error() != QNetworkReply::NoError || !Parsers::parseMinecraftProfileMojang(reply->readAll(), profile)) {
+                finishSkinLookup(tr("Couldn’t load the Minecraft profile."));
+                return;
+            }
+            const QUrl texture(profile.skin.url);
+            if (texture.scheme() != "https" || texture.host() != "textures.minecraft.net") {
+                finishSkinLookup(tr("The profile has no available Minecraft skin."));
+                return;
+            }
+            getSkinData(texture, [this, user, profile](QNetworkReply* image) {
+                const auto bytes = image->readAll();
+                const QSize size = bytes.size() <= 128 * 1024 ? QImage::fromData(bytes, "PNG").size() : QSize();
+                if (image->error() != QNetworkReply::NoError || image->url().host() != "textures.minecraft.net" ||
+                    (size != QSize(64, 64) && size != QSize(64, 32))) {
+                    finishSkinLookup(tr("Couldn’t download a valid skin."));
+                    return;
+                }
+                QTemporaryDir staging;
+                const auto path = staging.filePath("skin.png");
+                if (!staging.isValid() || !FS::write(path, bytes)) {
+                    finishSkinLookup(tr("Couldn’t save the downloaded skin."));
+                    return;
+                }
+                QString installed;
+                const auto error = m_list.installSkin(path, user + ".png", &installed);
+                if (!error.isEmpty()) {
+                    finishSkinLookup(error);
+                    return;
+                }
+                SkinModel skin(installed);
+                skin.setModel(profile.skin.variant.compare("slim", Qt::CaseInsensitive) == 0 ? SkinModel::SLIM : SkinModel::CLASSIC);
+                skin.setURL(profile.skin.url);
+                m_list.updateSkin(&skin);
+                m_importedUserSkins.insert(user.toLower(), installed);
+                selectImportedSkin(installed);
+                finishSkinLookup(tr("Imported %1").arg(user));
+            });
+        });
+}
+
+bool SkinManageDialog::selectImportedSkin(const QString& path)
+{
+    if (path.isEmpty())
+        return false;
+    const auto row = m_list.getSkinIndex(path);
+    if (row < 0)
+        return false;
+    m_ui->collection->setCurrentIndex(0);
+    m_ui->search->clear();
+    const auto* filter = qobject_cast<const QSortFilterProxyModel*>(m_ui->listView->model());
+    if (!filter)
+        return false;
+    m_ui->listView->setCurrentIndex(filter->mapFromSource(m_list.index(row, 0)));
+    return true;
 }
 
 void SkinManageDialog::resizeEvent(QResizeEvent* event)

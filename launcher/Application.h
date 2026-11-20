@@ -184,7 +184,7 @@ class Application : public QApplication {
      */
     bool openJsonEditor(const QString& filename);
 
-    InstanceWindow* showInstanceWindow(MinecraftInstance* instance, const QString& page = QString());
+    InstanceWindow* showInstanceWindow(MinecraftInstance* instance, const QString& page = QString(), QWidget* anchor = nullptr);
     MainWindow* showMainWindow(bool minimized = false);
     ViewLogWindow* showLogWindow();
 

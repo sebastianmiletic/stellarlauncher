@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "stellar_client",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "name": "Stellar Client",
   "description": "Stellar's in-game mods, shaders, skins and resource packs menu.",
   "environment": "client",
