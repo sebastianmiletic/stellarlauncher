@@ -13,9 +13,6 @@
 #include <QGridLayout>
 #include <QDir>
 #include <QDirListing>
-#include <QDrag>
-#include <QDropEvent>
-#include <QMimeData>
 #include <QDynamicPropertyChangeEvent>
 #include <QFileDialog>
 #include <QFrame>
@@ -414,7 +411,7 @@ public:
     std::function<void(const QPoint&)> options;
     std::function<void()> open;
     std::function<void()> play;
-    std::function<void(const QString&, bool)> reorder;
+    std::function<void(const QString&, const QPoint&)> reorder;
     std::function<void(bool)> dragging;
     QString instanceId;
 
@@ -430,41 +427,29 @@ protected:
 
     void mouseMoveEvent(QMouseEvent* event) override
     {
-        if (isDown() && !instanceId.isEmpty() && event->buttons().testFlag(Qt::LeftButton)
+        if (!m_reordering && isDown() && !instanceId.isEmpty() && event->buttons().testFlag(Qt::LeftButton)
             && (event->position().toPoint() - m_pressPosition).manhattanLength() >= QApplication::startDragDistance()) {
             ++m_clickNumber;
+            m_reordering = true;
             setDown(false);
-            auto* drag = new QDrag(this);
-            auto* data = new QMimeData;
-            data->setData("application/x-stellar-instance", instanceId.toUtf8());
-            drag->setMimeData(data);
-            drag->setPixmap(grab().scaled(108, 108, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            setCursor(Qt::ClosedHandCursor);
             dragging(true);
-            drag->exec(Qt::MoveAction);
-            dragging(false);
-            return;
+            update();
         }
-        QAbstractButton::mouseMoveEvent(event);
-    }
-
-    void dragEnterEvent(QDragEnterEvent* event) override
-    {
-        if (event->source() && event->source() != this && event->mimeData()->hasFormat("application/x-stellar-instance"))
-            event->acceptProposedAction();
-    }
-
-    void dropEvent(QDropEvent* event) override
-    {
-        if (!reorder)
-            return;
-        const auto source = QString::fromUtf8(event->mimeData()->data("application/x-stellar-instance"));
-        event->acceptProposedAction();
-        const bool after = event->position().x() >= width() / 2.0;
-        QTimer::singleShot(0, this, [this, source, after] { reorder(source, after); });
+        if (!m_reordering)
+            QAbstractButton::mouseMoveEvent(event);
     }
 
     void mouseReleaseEvent(QMouseEvent* event) override
     {
+        if (event->button() == Qt::LeftButton && m_reordering) {
+            m_reordering = false;
+            setCursor(Qt::PointingHandCursor);
+            dragging(false);
+            update();
+            reorder(instanceId, event->globalPosition().toPoint());
+            return;
+        }
         if (event->button() != Qt::LeftButton || !play) {
             QAbstractButton::mouseReleaseEvent(event);
             return;
@@ -540,6 +525,8 @@ protected:
             painter.drawText(QRect(17, height() - 35, width() - 34, 19), Qt::AlignVCenter, m_version);
         }
         m_feedback.paint(painter, shape);
+        if (m_reordering)
+            painter.fillRect(bounds, QColor(20, 20, 22, 102));
         painter.restore();
         painter.setPen(QPen(QColor("#37363d"), 1));
         painter.drawPath(shape);
@@ -557,6 +544,7 @@ private:
     double m_border = 0;
     int m_clickNumber = 0;
     QPoint m_pressPosition;
+    bool m_reordering = false;
     bool m_doubleClick = false;
 };
 
@@ -951,7 +939,6 @@ void StellarGallery::rebuild()
             };
         }
         tile->instanceId = id;
-        tile->setAcceptDrops(true);
         tile->dragging = [this](bool active) {
             if (active) {
                 m_slide->stop();
@@ -960,16 +947,23 @@ void StellarGallery::rebuild()
                 m_dragScroll->stop();
             }
         };
-        tile->reorder = [this, id](const QString& source, bool after) {
-            auto order = m_allIds;
-            if (source == id || !order.removeOne(source))
+        tile->reorder = [this](const QString& source, const QPoint& screenPoint) {
+            if (!m_scroll->viewport()->rect().contains(m_scroll->viewport()->mapFromGlobal(screenPoint)))
                 return;
-            const auto target = id.isEmpty() ? order.size() : order.indexOf(id) + (after ? 1 : 0);
-            order.insert(target, source);
+            auto* target = dynamic_cast<GalleryTile*>(m_cards->childAt(m_cards->mapFromGlobal(screenPoint)));
+            if (!target || target->instanceId == source)
+                return;
+            auto order = m_allIds;
+            if (!order.removeOne(source))
+                return;
+            const bool after = target->mapFromGlobal(screenPoint).x() >= target->width() / 2;
+            const auto id = target->instanceId;
+            const auto position = id.isEmpty() ? order.size() : order.indexOf(id) + (after ? 1 : 0);
+            order.insert(position, source);
             APPLICATION->settings()->set("StellarInstanceOrder", order);
             m_selected = source;
             m_saveSelection->start();
-            rebuild();
+            QTimer::singleShot(0, this, &StellarGallery::rebuild);
         };
         tile->options = [this, i](const QPoint& screen) {
             showActions(i, QRect(mapFromGlobal(screen), QSize(1, 1)));
