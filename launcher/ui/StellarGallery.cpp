@@ -347,6 +347,61 @@ private:
     qreal m_reveal = 0;
 };
 
+class CardOutline final : public QWidget {
+public:
+    explicit CardOutline(QWidget* parent) : QWidget(parent)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(QPen(QColor("#e9e7f1"), 2));
+        painter.drawRoundedRect(rect().adjusted(1, 1, -1, -1), 13, 13);
+    }
+};
+
+class DetailSlide final : public QWidget {
+public:
+    DetailSlide(QWidget* parent, QPixmap previous, QPixmap next, int direction)
+        : QWidget(parent), m_previous(std::move(previous)), m_next(std::move(next)), m_direction(direction)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setGeometry(parent->rect());
+        auto* motion = new QVariantAnimation(this);
+        motion->setDuration(245);
+        motion->setEasingCurve(QEasingCurve::OutCubic);
+        motion->setStartValue(0.0);
+        motion->setEndValue(1.0);
+        connect(motion, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+            m_progress = value.toReal();
+            update();
+        });
+        connect(motion, &QVariantAnimation::finished, this, &QObject::deleteLater);
+        show();
+        raise();
+        motion->start();
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        const int shift = m_direction * qRound(width() * m_progress);
+        QPainter painter(this);
+        painter.drawPixmap(QPoint(-shift, 0), m_previous);
+        painter.drawPixmap(QPoint(m_direction * width() - shift, 0), m_next);
+    }
+
+private:
+    QPixmap m_previous;
+    QPixmap m_next;
+    int m_direction;
+    qreal m_progress = 0;
+};
+
 class GalleryTile final : public QAbstractButton {
 public:
     GalleryTile(const QString& title, QString version, QPixmap image, QWidget* parent)
@@ -356,30 +411,8 @@ public:
         setAccessibleName(title);
         setFocusPolicy(Qt::NoFocus);
         setCursor(Qt::PointingHandCursor);
-        m_focus.setDuration(155);
-        m_focus.setEasingCurve(QEasingCurve::OutQuart);
-        connect(&m_focus, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
-            m_border = value.toDouble();
-            update();
-        });
     }
 
-    void setSelected(bool selected, bool animate)
-    {
-        const auto value = selected ? 1.0 : 0.0;
-        if (animate && m_focus.endValue().isValid() && m_focus.endValue().toDouble() != value) {
-            m_focus.stop();
-            m_focus.setStartValue(m_border);
-            m_focus.setEndValue(value);
-            m_focus.start();
-        } else if (!animate || !m_focus.endValue().isValid()) {
-            m_focus.stop();
-            m_focus.setStartValue(value);
-            m_focus.setEndValue(value);
-            m_border = value;
-            update();
-        }
-    }
     void setAccountCard(QPixmap skin, QString username)
     {
         m_accountCard = true;
@@ -540,10 +573,6 @@ protected:
         painter.restore();
         painter.setPen(QPen(QColor("#37363d"), 1));
         painter.drawPath(shape);
-        QColor selection("#e9e7f1");
-        selection.setAlphaF(m_border);
-        painter.setPen(QPen(selection, 2));
-        painter.drawPath(shape);
     }
 
 private:
@@ -552,9 +581,7 @@ private:
     QPixmap m_accountSkin;
     QString m_accountName;
     bool m_accountCard = false;
-    QVariantAnimation m_focus;
     ButtonFeedback m_feedback;
-    double m_border = 0;
     int m_clickNumber = 0;
     QPoint m_pressPosition;
     bool m_reordering = false;
@@ -792,8 +819,13 @@ StellarGallery::StellarGallery(Actions actions, QWidget* parent)
     m_scroll->viewport()->installEventFilter(this);
     m_row->setContentsMargins(gap, gap, gap, gap);
     m_row->setSpacing(gap);
-    m_slide->setDuration(220);
-    m_slide->setEasingCurve(QEasingCurve::OutQuart);
+    m_slide->setDuration(245);
+    m_slide->setEasingCurve(QEasingCurve::OutCubic);
+    m_outline = new CardOutline(m_cards);
+    m_outline->hide();
+    m_outlineSlide = new QPropertyAnimation(m_outline, "geometry", this);
+    m_outlineSlide->setDuration(195);
+    m_outlineSlide->setEasingCurve(QEasingCurve::OutCubic);
     auto* preferences = new QShortcut(QKeySequence(QStringLiteral("Ctrl+,")), this);
     connect(preferences, &QShortcut::activated, this, &StellarGallery::showPreferences);
     auto* create = new QShortcut(QKeySequence::New, this);
@@ -941,8 +973,14 @@ void StellarGallery::rebuild()
         tile->reorder = [this](const QString& source, const QPoint& screenPoint) {
             if (!m_scroll->viewport()->rect().contains(m_scroll->viewport()->mapFromGlobal(screenPoint)))
                 return;
-            auto* target = dynamic_cast<GalleryTile*>(m_cards->childAt(m_cards->mapFromGlobal(screenPoint)));
-            if (!target || target->instanceId == source)
+            const auto point = m_cards->mapFromGlobal(screenPoint);
+            const auto match = std::find_if(m_tiles.cbegin(), m_tiles.cend(), [point](const auto* card) {
+                return card->geometry().contains(point);
+            });
+            if (match == m_tiles.cend())
+                return;
+            const auto* target = static_cast<GalleryTile*>(*match);
+            if (target->instanceId == source)
                 return;
             auto order = m_allIds;
             if (!order.removeOne(source))
@@ -995,24 +1033,44 @@ void StellarGallery::selectIndex(int index, bool animate)
     if (m_tiles.isEmpty())
         return;
     m_index = std::clamp(index, 0, int(m_tiles.size()) - 1);
-    for (int i = 0; i < m_tiles.size(); ++i)
-        static_cast<GalleryTile*>(m_tiles[i])->setSelected(i == m_index, animate && motionEnabled());
+    const auto tile = m_tiles[m_index]->geometry();
+    const bool shouldAnimate = animate && motionEnabled();
+    if (!shouldAnimate || m_outline->isHidden() || m_outlineSlide->endValue().toRect() != tile) {
+        m_outlineSlide->stop();
+        if (shouldAnimate && !m_outline->isHidden() && m_outline->geometry() != tile) {
+            m_outlineSlide->setStartValue(m_outline->geometry());
+            m_outlineSlide->setEndValue(tile);
+            m_outlineSlide->start();
+        } else {
+            m_outlineSlide->setEndValue(tile);
+            m_outline->setGeometry(tile);
+        }
+    }
+    m_outline->show();
+    m_outline->raise();
     if (m_index < m_ids.size() && m_selected != m_ids[m_index]) {
         m_selected = m_ids[m_index];
         m_saveSelection->start();
     }
     auto* bar = m_scroll->horizontalScrollBar();
-    const auto tile = m_tiles[m_index]->geometry();
     const int offset = bar->value();
     int target = offset;
     if (tile.right() + gap >= offset + m_scroll->viewport()->width())
         target = tile.right() + gap + 1 - m_scroll->viewport()->width();
     else if (tile.left() - gap < offset)
         target = tile.left() - gap;
-    m_slide->stop();
+    slideTo(target, shouldAnimate);
+}
+
+void StellarGallery::slideTo(int target, bool animate)
+{
+    auto* bar = m_scroll->horizontalScrollBar();
     target = std::clamp(target, bar->minimum(), bar->maximum());
-    if (animate && target != offset && motionEnabled()) {
-        m_slide->setStartValue(offset);
+    if (animate && m_slide->state() == QAbstractAnimation::Running && m_slide->endValue().toInt() == target)
+        return;
+    m_slide->stop();
+    if (animate && target != bar->value()) {
+        m_slide->setStartValue(bar->value());
         m_slide->setEndValue(target);
         m_slide->start();
     } else {
@@ -1032,11 +1090,15 @@ void StellarGallery::activate(int index)
         showAccounts();
 }
 
-void StellarGallery::openInstance(const QString& id)
+void StellarGallery::openInstance(const QString& id, int direction)
 {
     auto* instance = APPLICATION->instances()->getInstanceById(id);
     if (!instance)
         return;
+    QPixmap previous;
+    if (direction && m_detail && m_detailId != id && motionEnabled())
+        previous = m_detailSlide ? m_detailSlide->grab() : m_detail->grab();
+    delete m_detailSlide.data();
     if (m_detailId != id) {
         disconnect(m_detailRunningChanged);
         m_detailRunningChanged = connect(instance, &MinecraftInstance::runningStatusChanged, this,
@@ -1075,11 +1137,14 @@ void StellarGallery::openInstance(const QString& id)
     m_detail->show();
     m_detail->raise();
     refreshInstance();
+    if (!previous.isNull())
+        m_detailSlide = new DetailSlide(this, std::move(previous), m_detail->grab(), direction);
     setFocus();
 }
 
 void StellarGallery::closeInstance()
 {
+    delete m_detailSlide.data();
     disconnect(m_detailRunningChanged);
     m_detailId.clear();
     if (auto* detail = std::exchange(m_detail, nullptr)) {
@@ -1202,8 +1267,10 @@ void StellarGallery::keyPressEvent(QKeyEvent* event)
             const int index = m_ids.indexOf(m_detailId);
             const int next = event->key() == Qt::Key_Home ? 0 : event->key() == Qt::Key_End ? m_ids.size() - 1 :
                 std::clamp(index + (event->key() == Qt::Key_Left ? -1 : 1), 0, int(m_ids.size() - 1));
-            selectIndex(next, false);
-            openInstance(m_ids[next]);
+            if (next != index) {
+                selectIndex(next, false);
+                openInstance(m_ids[next], next > index ? 1 : -1);
+            }
             break;
         }
         selectIndex(event->key() == Qt::Key_Home ? 0 : event->key() == Qt::Key_End ? m_tiles.size() - 1 :
@@ -1242,9 +1309,12 @@ bool StellarGallery::eventFilter(QObject* object, QEvent* event)
         const bool precise = !wheel->pixelDelta().isNull();
         const auto delta = precise ? wheel->pixelDelta() : wheel->angleDelta();
         const int scroll = delta.x() != 0 ? delta.x() : delta.y();
-        auto* bar = m_scroll->horizontalScrollBar();
-        m_slide->stop();
-        bar->setValue(bar->value() - (precise ? scroll : scroll / 2));
+        if (m_detail)
+            return false;
+        const auto animate = !precise && motionEnabled();
+        const int from = animate && m_slide->state() == QAbstractAnimation::Running ? m_slide->endValue().toInt()
+                                                                                   : m_scroll->horizontalScrollBar()->value();
+        slideTo(from - (precise ? scroll : scroll / 2), animate);
         return true;
     }
     if (event->type() == QEvent::MouseButtonPress) {

@@ -6,6 +6,7 @@
 #include <QSet>
 #include <QUrl>
 #include <QPixmap>
+#include <QPointer>
 #include <QWidget>
 
 #include <functional>
@@ -47,8 +48,9 @@ private:
 
     void rebuild();
     void selectIndex(int index, bool animate);
+    void slideTo(int offset, bool animate);
     void activate(int index);
-    void openInstance(const QString& id);
+    void openInstance(const QString& id, int direction = 0);
     void closeInstance();
     void playInstance(const QString& id);
     void launchChecked(const QString& id);
@@ -81,6 +83,8 @@ private:
     QWidget* m_cards;
     QHBoxLayout* m_row;
     QPropertyAnimation* m_slide;
+    QPropertyAnimation* m_outlineSlide;
+    QWidget* m_outline;
     QTimer* m_launchTimer;
     QTimer* m_dragScroll;
     QTimer* m_saveSelection;
@@ -88,6 +92,7 @@ private:
     QAbstractButton* m_accountTile = nullptr;
     QFrame* m_panel = nullptr;
     QWidget* m_detail = nullptr;
+    QPointer<QWidget> m_detailSlide;
     QList<QAbstractButton*> m_tiles;
     QList<Collection> m_collections;
     QHash<QString, QPixmap> m_artwork;
