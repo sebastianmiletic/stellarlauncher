@@ -899,8 +899,11 @@ void StellarGallery::rebuild()
     m_tiles.clear();
     m_ids.clear();
 
-    const int columns = std::clamp(int(instances.size()) + 2, 2, 3);
-    const int width = (windowWidth - gap * (columns + 1)) / columns;
+    const int columns = std::clamp(int(instances.size()), 1, 4);
+    const int cardSpace = windowWidth - gap * (columns + 1);
+    const auto cardWidth = [columns, cardSpace](int index) {
+        return cardSpace / columns + (index % columns < cardSpace % columns ? 1 : 0);
+    };
     for (int i = 0; i <= instances.size(); ++i) {
         const auto* instance = i < instances.size() ? instances[i] : nullptr;
         const auto id = instance ? instance->id() : QString();
@@ -912,7 +915,7 @@ void StellarGallery::rebuild()
             version = tr("Minecraft");
         auto* tile = new GalleryTile(title, version, pixmap, m_cards);
         tile->setProperty("wallpaperPath", path);
-        tile->setFixedSize(width, windowHeight - gap * 2);
+        tile->setFixedSize(cardWidth(i), windowHeight - gap * 2);
         m_row->addWidget(tile);
         m_tiles.append(tile);
         tile->open = [this, i] { activate(i); };
@@ -959,7 +962,7 @@ void StellarGallery::rebuild()
         tile->installEventFilter(this);
     }
     auto* profile = new GalleryTile(tr("Accounts & Settings"), {}, {}, m_cards);
-    profile->setFixedSize(width, windowHeight - gap * 2);
+    profile->setFixedSize(cardWidth(m_tiles.size()), windowHeight - gap * 2);
     profile->installEventFilter(this);
     profile->options = [this](const QPoint&) { showAccounts(); };
     m_accountTile = profile;
@@ -967,7 +970,7 @@ void StellarGallery::rebuild()
     m_tiles.append(profile);
     connect(profile, &QAbstractButton::clicked, this, [this] { activate(m_tiles.size() - 1); });
     updateAccountIcons();
-    m_cards->setFixedSize(gap + int(m_tiles.size()) * (width + gap), windowHeight);
+    m_cards->setFixedSize(m_row->sizeHint().width(), windowHeight);
     m_row->activate();
     m_scroll->horizontalScrollBar()->setValue(oldOffset);
     scheduleThumbnails();
