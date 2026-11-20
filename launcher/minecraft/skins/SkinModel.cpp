@@ -162,6 +162,16 @@ static QImage generatePreviews(QImage texture, bool slim)
 
     return preview;
 }
+QImage SkinModel::frontPreview(QImage texture, Model model)
+{
+    if (texture.width() < 64 || texture.width() % 64 != 0 ||
+        (texture.height() != texture.width() && texture.height() * 2 != texture.width()))
+        return {};
+    if (texture.width() != 64)
+        texture = texture.scaledToWidth(64, Qt::FastTransformation);
+    return generatePreviews(improveSkin(texture), model == SLIM).copy(0, 2, 16, 32);
+}
+
 SkinModel::SkinModel(QString path) : m_path(path), m_texture(getSkin(path)), m_model(Model::CLASSIC)
 {
     m_preview = generatePreviews(m_texture, false);

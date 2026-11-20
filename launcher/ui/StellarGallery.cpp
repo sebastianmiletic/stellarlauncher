@@ -65,6 +65,7 @@
 #include "minecraft/PackProfile.h"
 #include "minecraft/StellarClient.h"
 #include "minecraft/StellarMods.h"
+#include "minecraft/skins/SkinModel.h"
 #include "settings/SettingsObject.h"
 #include "meta/Index.h"
 #include "meta/Version.h"
@@ -346,34 +347,6 @@ private:
     qreal m_reveal = 0;
 };
 
-class AccountAvatar final : public QPushButton {
-public:
-    explicit AccountAvatar(QWidget* parent) : QPushButton(parent)
-    {
-        setFixedSize(36, 36);
-        setCursor(Qt::PointingHandCursor);
-        setAccessibleName(tr("Minecraft Accounts"));
-        setToolTip(tr("Minecraft Accounts"));
-    }
-
-protected:
-    void paintEvent(QPaintEvent*) override
-    {
-        QPainter paint(this);
-        paint.setRenderHint(QPainter::Antialiasing);
-        QPainterPath clip;
-        clip.addRoundedRect(rect(), 7, 7);
-        paint.setClipPath(clip);
-        icon().paint(&paint, rect());
-        if (underMouse() || isDown())
-            paint.fillRect(rect(), QColor(20, 20, 22, isDown() ? 65 : 32));
-        if (hasFocus() && window()->testAttribute(Qt::WA_KeyboardFocusChange)) {
-            paint.setPen(QPen(QColor("#e9e7f1"), 2));
-            paint.drawPath(clip);
-        }
-    }
-};
-
 class GalleryTile final : public QAbstractButton {
 public:
     GalleryTile(const QString& title, QString version, QPixmap image, QWidget* parent)
@@ -407,6 +380,14 @@ public:
             update();
         }
     }
+    void setAccountCard(QPixmap skin, QString username)
+    {
+        m_accountCard = true;
+        m_accountSkin = std::move(skin);
+        m_accountName = std::move(username);
+        update();
+    }
+
     void setArtwork(const QPixmap& image) { m_image = image; update(); }
     std::function<void(const QPoint&)> options;
     std::function<void()> open;
@@ -499,7 +480,36 @@ protected:
         painter.setClipPath(shape);
         painter.fillRect(bounds, QColor("#1c1c20"));
 
-        if (m_version.isEmpty() && m_image.isNull()) {
+        if (m_accountCard) {
+            QRadialGradient glow(bounds.center() - QPoint(0, 22), qMax(125, width() / 2));
+            glow.setColorAt(0, QColor("#33313b"));
+            glow.setColorAt(1, QColor("#1c1c20"));
+            painter.fillRect(bounds, glow);
+            const int scale = qBound(3, width() / 44, 6);
+            const QRect figure(bounds.center().x() - 8 * scale, bounds.center().y() - 16 * scale - 25, 16 * scale, 32 * scale);
+            if (m_accountSkin.isNull()) {
+                const auto face = accountFace(nullptr).pixmap(8 * scale, 8 * scale);
+                painter.drawPixmap(QRect(figure.x() + 4 * scale, figure.y(), 8 * scale, 8 * scale), face);
+                painter.fillRect(figure.x(), figure.y() + 8 * scale, 16 * scale, 12 * scale, QColor("#464651"));
+                painter.fillRect(figure.x() + 4 * scale, figure.y() + 20 * scale, 8 * scale, 12 * scale, QColor("#353541"));
+            } else {
+                painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
+                painter.drawPixmap(figure, m_accountSkin);
+            }
+            auto heading = font();
+            heading.setPixelSize(17);
+            heading.setWeight(QFont::DemiBold);
+            painter.setFont(heading);
+            painter.setPen(QColor("#ecebf0"));
+            const QRect title(12, height() - 76, width() - 24, 26);
+            painter.drawText(title, Qt::AlignCenter, painter.fontMetrics().elidedText(text(), Qt::ElideRight, title.width()));
+            heading.setPixelSize(13);
+            heading.setWeight(QFont::Normal);
+            painter.setFont(heading);
+            painter.setPen(QColor("#bcb9c5"));
+            painter.drawText(title.translated(0, 24), Qt::AlignCenter,
+                             painter.fontMetrics().elidedText(m_accountName, Qt::ElideRight, title.width()));
+        } else if (m_version.isEmpty() && m_image.isNull()) {
             const QPoint center = bounds.center() - QPoint(0, 10);
             painter.setPen(QPen(QColor("#ecebf0"), 1.6, Qt::SolidLine, Qt::RoundCap));
             painter.drawLine(center - QPoint(8, 0), center + QPoint(8, 0));
@@ -539,6 +549,9 @@ protected:
 private:
     QString m_version;
     QPixmap m_image;
+    QPixmap m_accountSkin;
+    QString m_accountName;
+    bool m_accountCard = false;
     QVariantAnimation m_focus;
     ButtonFeedback m_feedback;
     double m_border = 0;
@@ -551,10 +564,9 @@ private:
 class InstanceDetail final : public QWidget {
 public:
     InstanceDetail(QWidget* parent, const std::function<void()>& back, const std::function<void()>& play,
-                   const std::function<void()>& options, const std::function<void()>& accounts)
+                   const std::function<void()>& options)
         : QWidget(parent), m_title(new QLabel(this)), m_description(new QLabel(this)),
-          m_play(new GalleryButton(this)), m_progress(new QProgressBar(this)),
-          m_accounts(new AccountAvatar(this))
+          m_play(new GalleryButton(this)), m_progress(new QProgressBar(this))
     {
         setObjectName("stellarInstance");
         auto* layout = new QVBoxLayout(this);
@@ -568,9 +580,6 @@ public:
         connect(backButton, &QPushButton::clicked, this, back);
         header->addWidget(backButton);
         header->addStretch();
-        auto* accountButton = m_accounts;
-        connect(accountButton, &QPushButton::clicked, this, accounts);
-        header->addWidget(accountButton);
         layout->addLayout(header);
         layout->addStretch();
 
@@ -623,9 +632,6 @@ public:
         connect(&m_wave, &QVariantAnimation::valueChanged, this, [this] { update(); });
         connect(&m_playback->movie, &QMovie::frameChanged, this, [this] { update(); });
     }
-
-    void setAccountIcon(const QIcon& icon) { m_accounts->setIcon(icon); }
-    QRect accountAnchor(QWidget* gallery) const { return {m_accounts->mapTo(gallery, QPoint()), m_accounts->size()}; }
 
     void setWallpaperFile(const QString& path)
     {
@@ -736,7 +742,6 @@ private:
     QLabel* m_description;
     QPushButton* m_play;
     QProgressBar* m_progress;
-    QPushButton* m_accounts;
     WallpaperPlayback* m_playback = new WallpaperPlayback(this);
     QVariantAnimation m_wave;
     QVariantAnimation m_waveFill;
@@ -839,27 +844,10 @@ StellarGallery::StellarGallery(Actions actions, QWidget* parent)
     }
 
     m_collections.append({QStringLiteral("animated"), tr("Animated GIFs"), {}, {}, {}});
-    m_homeAccounts = new AccountAvatar(this);
-    m_homeAccounts->move(width() - 52, 16);
-    connect(m_homeAccounts, &QPushButton::clicked, this, &StellarGallery::showAccounts);
-    m_loaderFilter = new QComboBox(this);
-    m_loaderFilter->setAccessibleName(tr("Filter by mod loader"));
-    m_loaderFilter->setFixedWidth(126);
-    m_loaderFilter->move(16, 16);
-    m_loaderFilter->addItem(tr("All loaders"), QString());
-    m_loaderFilter->addItem(tr("Vanilla"), "Vanilla");
-    for (const auto* loader : {"Fabric", "Forge", "NeoForge", "Quilt", "LiteLoader"})
-        m_loaderFilter->addItem(QString::fromLatin1(loader), QString::fromLatin1(loader));
-    m_loaderFilter->setCurrentIndex(qMax(0, m_loaderFilter->findData(APPLICATION->settings()->get("StellarLoaderFilter"))));
-    connect(m_loaderFilter, &QComboBox::currentIndexChanged, this, [this] {
-        APPLICATION->settings()->set("StellarLoaderFilter", m_loaderFilter->currentData());
-        rebuild();
-    });
     auto* accounts = APPLICATION->accounts();
     connect(accounts, &AccountList::listChanged, this, &StellarGallery::updateAccountIcons);
     connect(accounts, &AccountList::defaultAccountChanged, this, &StellarGallery::updateAccountIcons);
     connect(accounts, &QAbstractItemModel::dataChanged, this, &StellarGallery::updateAccountIcons);
-    updateAccountIcons();
 
     m_selected = APPLICATION->settings()->get("SelectedInstance").toString();
     auto* list = APPLICATION->instances();
@@ -894,7 +882,7 @@ void StellarGallery::rebuild()
         m_allIds.append(instance->id());
         versions.insert(instance->id(), versionOf(instance));
     }
-    const auto filter = m_loaderFilter->currentData().toString();
+    const auto filter = APPLICATION->settings()->get("StellarLoaderFilter").toString();
     if (!filter.isEmpty()) {
         instances.removeIf([&](const auto* instance) {
             const auto loader = versions.value(instance->id()).loader;
@@ -911,7 +899,7 @@ void StellarGallery::rebuild()
     m_tiles.clear();
     m_ids.clear();
 
-    const int columns = std::clamp(int(instances.size()), 1, 3);
+    const int columns = std::clamp(int(instances.size()) + 2, 2, 3);
     const int width = (windowWidth - gap * (columns + 1)) / columns;
     for (int i = 0; i <= instances.size(); ++i) {
         const auto* instance = i < instances.size() ? instances[i] : nullptr;
@@ -970,6 +958,15 @@ void StellarGallery::rebuild()
         };
         tile->installEventFilter(this);
     }
+    auto* profile = new GalleryTile(tr("Accounts & Settings"), {}, {}, m_cards);
+    profile->setFixedSize(width, windowHeight - gap * 2);
+    profile->installEventFilter(this);
+    profile->options = [this](const QPoint&) { showAccounts(); };
+    m_accountTile = profile;
+    m_row->addWidget(profile);
+    m_tiles.append(profile);
+    connect(profile, &QAbstractButton::clicked, this, [this] { activate(m_tiles.size() - 1); });
+    updateAccountIcons();
     m_cards->setFixedSize(gap + int(m_tiles.size()) * (width + gap), windowHeight);
     m_row->activate();
     m_scroll->horizontalScrollBar()->setValue(oldOffset);
@@ -1024,10 +1021,12 @@ void StellarGallery::activate(int index)
 {
     dismissPanel();
     selectIndex(index, true);
-    if (index == m_ids.size())
+    if (index < m_ids.size())
+        openInstance(m_ids.at(index));
+    else if (index == m_ids.size())
         showCreator();
     else
-        openInstance(m_ids.value(index));
+        showAccounts();
 }
 
 void StellarGallery::openInstance(const QString& id)
@@ -1044,12 +1043,10 @@ void StellarGallery::openInstance(const QString& id)
     if (!m_detail) {
         auto* detail = new InstanceDetail(this, [this] { closeInstance(); },
                                          [this] { playInstance(m_detailId); },
-                                         [this] { showActions(m_ids.indexOf(m_detailId)); },
-                                         [this] { showAccounts(); });
+                                         [this] { showActions(m_ids.indexOf(m_detailId)); });
         detail->setGeometry(rect());
         detail->installEventFilter(this);
         m_detail = detail;
-        updateAccountIcons();
         if (motionEnabled()) {
             auto* effect = new QGraphicsOpacityEffect(detail);
             detail->setGraphicsEffect(effect);
@@ -1072,8 +1069,6 @@ void StellarGallery::openInstance(const QString& id)
             m_detailWallpaper = paths.at(QRandomGenerator::global()->bounded(int(paths.size())));
     }
     m_scroll->hide();
-    m_homeAccounts->hide();
-    m_loaderFilter->hide();
     m_detail->show();
     m_detail->raise();
     refreshInstance();
@@ -1088,8 +1083,6 @@ void StellarGallery::closeInstance()
         detail->hide();
         detail->deleteLater();
         m_scroll->show();
-        m_homeAccounts->show();
-        m_loaderFilter->show();
     }
     setFocus();
 }
@@ -1359,6 +1352,10 @@ void StellarGallery::dismissPanel()
 void StellarGallery::showActions(int index, QRect anchor)
 {
     selectIndex(index, false);
+    if (!m_detail && index == m_tiles.size() - 1) {
+        showAccounts();
+        return;
+    }
     const auto id = m_ids.value(index);
     auto* instance = APPLICATION->instances()->getInstanceById(id);
     auto* panel = makePanel(instance ? instance->name() : tr("Library"));
@@ -1478,6 +1475,9 @@ void StellarGallery::showContent(const QString& id)
             QMessageBox::warning(this, tr("Stellar in-game tools"), installed.error());
         }
     });
+    auto* settings = new GalleryButton(tr("Mod Settings"), panel);
+    panel->layout()->addWidget(settings);
+    connect(settings, &QPushButton::clicked, panel, [this] { showModSettings(); });
     placePanel();
 }
 
@@ -1822,10 +1822,20 @@ void StellarGallery::showCreator()
 void StellarGallery::updateAccountIcons()
 {
     const auto account = APPLICATION->accounts()->defaultAccount();
-    const auto icon = accountFace(account.get());
-    m_homeAccounts->setIcon(icon);
-    if (m_detail)
-        static_cast<InstanceDetail*>(m_detail)->setAccountIcon(icon);
+    if (!m_accountTile)
+        return;
+    const auto data = account ? &account->accountData()->minecraftProfile.skin : nullptr;
+    QImage preview;
+    if (data && !data->data.isEmpty()) {
+        preview = SkinModel::frontPreview(QImage::fromData(data->data, "PNG"),
+            data->variant.compare("SLIM", Qt::CaseInsensitive) == 0 ? SkinModel::SLIM : SkinModel::CLASSIC);
+    }
+    if (preview.isNull()) {
+        const QDir skins(APPLICATION->settings()->get("SkinsDir").toString());
+        preview = SkinModel::frontPreview(QImage(skins.filePath("Minecraft Defaults/Steve.png")), SkinModel::CLASSIC);
+    }
+    static_cast<GalleryTile*>(m_accountTile)->setAccountCard(QPixmap::fromImage(preview),
+        account ? account->displayName() : tr("No account connected"));
 }
 
 void StellarGallery::showAccounts()
@@ -1834,8 +1844,6 @@ void StellarGallery::showAccounts()
         dismissPanel();
         return;
     }
-    const QRect anchor = m_detail ? static_cast<InstanceDetail*>(m_detail)->accountAnchor(this)
-                                  : m_homeAccounts->geometry();
     auto* panel = makePanel(tr("Minecraft Accounts"));
     panel->setProperty("accountsDropdown", true);
     panel->setFixedWidth(248);
@@ -1874,7 +1882,7 @@ void StellarGallery::showAccounts()
     add({}, tr("Manage accounts"), m_actions.accounts);
     add({}, tr("Change skin"), m_actions.skins);
     add({}, tr("General settings"), [this] { showPreferences(); });
-    placePanel(anchor, true);
+    placePanel();
 }
 
 void StellarGallery::showPreferences()
@@ -1908,7 +1916,44 @@ void StellarGallery::showPreferences()
     option(tr("Animate app opening"), "StellarOpeningAnimation");
     option(tr("Use Stellar title on first Minecraft launch"), "StellarTitleScreen");
     option(tr("Enable motion effects"), "StellarMotion");
-    option(tr("Update matching mods when switching versions"), "StellarAutoMatchMods");
+    auto* mods = new GalleryButton(tr("Mod Settings"), panel);
+    layout->addWidget(mods);
+    connect(mods, &QPushButton::clicked, panel, [this] { showModSettings(); });
+    auto* microsoft = new GalleryButton(tr("Microsoft application ID…"), panel);
+    layout->addWidget(microsoft);
+    connect(microsoft, &QPushButton::clicked, panel, [this] {
+        dismissPanel();
+        MSALoginDialog::configureMicrosoftApplication(this);
+    });
+    placePanel();
+}
+
+void StellarGallery::showModSettings()
+{
+    auto* panel = makePanel(tr("Mod Settings"));
+    panel->setFixedWidth(352);
+    auto* layout = qobject_cast<QVBoxLayout*>(panel->layout());
+    auto* row = new QHBoxLayout;
+    row->addWidget(new QLabel(tr("Library loader filter"), panel));
+    auto* filter = new QComboBox(panel);
+    filter->setAccessibleName(tr("Library loader filter"));
+    filter->addItem(tr("All loaders"), QString());
+    filter->addItem(tr("Vanilla"), "Vanilla");
+    for (const auto* loader : {"Fabric", "Forge", "NeoForge", "Quilt", "LiteLoader"})
+        filter->addItem(QString::fromLatin1(loader), QString::fromLatin1(loader));
+    filter->setCurrentIndex(qMax(0, filter->findData(APPLICATION->settings()->get("StellarLoaderFilter"))));
+    connect(filter, &QComboBox::currentIndexChanged, panel, [this, filter] {
+        APPLICATION->settings()->set("StellarLoaderFilter", filter->currentData());
+        rebuild();
+    });
+    row->addWidget(filter, 1);
+    layout->addLayout(row);
+    auto* matching = new QCheckBox(tr("Update matching mods when switching versions"), panel);
+    matching->setChecked(APPLICATION->settings()->get("StellarAutoMatchMods").toBool());
+    layout->addWidget(matching);
+    connect(matching, &QCheckBox::toggled, panel, [](bool value) {
+        APPLICATION->settings()->set("StellarAutoMatchMods", value);
+    });
 #ifdef Q_OS_MACOS
     auto* compact = new GalleryButton(tr("Deduplicate identical mods"), panel);
     layout->addWidget(compact);
@@ -1935,12 +1980,6 @@ void StellarGallery::showPreferences()
             });
     });
 #endif
-    auto* microsoft = new GalleryButton(tr("Microsoft application ID…"), panel);
-    layout->addWidget(microsoft);
-    connect(microsoft, &QPushButton::clicked, panel, [this] {
-        dismissPanel();
-        MSALoginDialog::configureMicrosoftApplication(this);
-    });
     placePanel();
 }
 

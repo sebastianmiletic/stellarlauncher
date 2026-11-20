@@ -12,10 +12,8 @@
 
 class QAbstractButton;
 class QFrame;
-class QComboBox;
 class QHBoxLayout;
 class QPropertyAnimation;
-class QPushButton;
 class QScrollArea;
 class QTimer;
 class MinecraftInstance;
@@ -58,6 +56,7 @@ private:
     void finishLaunch();
     void showActions(int index, QRect anchor = {});
     void showPreferences();
+    void showModSettings();
     void showAccounts();
     void updateAccountIcons();
     void showCreator();
@@ -86,8 +85,7 @@ private:
     QTimer* m_dragScroll;
     QTimer* m_saveSelection;
     QMetaObject::Connection m_detailRunningChanged;
-    QPushButton* m_homeAccounts = nullptr;
-    QComboBox* m_loaderFilter = nullptr;
+    QAbstractButton* m_accountTile = nullptr;
     QFrame* m_panel = nullptr;
     QWidget* m_detail = nullptr;
     QList<QAbstractButton*> m_tiles;
