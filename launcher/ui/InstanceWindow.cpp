@@ -146,18 +146,13 @@ InstanceWindow::InstanceWindow(MinecraftInstance* instance, const QString& page,
         m_restartButton->hide();
 
         m_killButton = new QPushButton(this);
-        m_killButton->setText(tr("&Kill"));
+        m_killButton->setText(tr("Stop Minecraft"));
         m_killButton->setToolTip(tr("Kill the running instance"));
         m_killButton->setShortcut(QKeySequence(tr("Ctrl+K")));
         horizontalLayout->addWidget(m_killButton);
         connect(m_killButton, &QPushButton::clicked, this, [this] { APPLICATION->kill(m_instance); });
 
         updateButtons();
-
-        m_closeButton = new QPushButton(this);
-        m_closeButton->setText(tr("Close"));
-        horizontalLayout->addWidget(m_closeButton);
-        connect(m_closeButton, &QPushButton::clicked, this, &QMainWindow::close);
 
         m_container->addButtons(horizontalLayout);
 
@@ -225,7 +220,7 @@ void InstanceWindow::updateButtons()
 
     m_launchButton->setEnabled(m_instance->canLaunch());
     m_restartButton->setEnabled(running && !m_restartQueued);
-    m_killButton->setEnabled(running);
+    m_killButton->setVisible(running);
 
     QMenu* launchMenu = m_launchButton->menu();
     if (launchMenu)

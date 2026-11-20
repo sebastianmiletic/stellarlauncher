@@ -248,7 +248,7 @@ bool ExternalResourcesPage::event(QEvent* ev)
         // NOTE: style can change minimum size
         m_ui->treeView->header()->resizeSection(0, 0);
     }
-    return true;
+    return QMainWindow::event(ev);
 }
 
 bool ExternalResourcesPage::eventFilter(QObject* obj, QEvent* ev)

@@ -43,9 +43,12 @@ public:
         if (!m_page) {
             m_page = m_create();
             m_page->setParentContainer(m_container);
+            auto* widget = dynamic_cast<QWidget*>(m_page);
+            widget->setParent(this);
             auto* layout = new QVBoxLayout(this);
             layout->setContentsMargins(0, 0, 0, 0);
-            layout->addWidget(dynamic_cast<QWidget*>(m_page));
+            layout->addWidget(widget);
+            widget->show();
         }
         return m_page;
     }
