@@ -187,13 +187,15 @@ QString SkinModel::name() const
 
 bool SkinModel::rename(QString newName)
 {
-    auto info = QFileInfo(m_path);
-    auto new_path = FS::PathCombine(info.absolutePath(), newName + ".png");
-    if (QFileInfo::exists(new_path)) {
+    if (newName.trimmed().isEmpty() || newName == "." || newName == ".." ||
+        newName.contains('/') || newName.contains('\\') || newName.contains(':'))
         return false;
-    }
-    m_path = new_path;
-    return FS::move(info.absoluteFilePath(), m_path);
+    const QFileInfo info(m_path);
+    const auto newPath = FS::PathCombine(info.absolutePath(), newName + ".png");
+    if (QFileInfo::exists(newPath) || !FS::move(info.absoluteFilePath(), newPath))
+        return false;
+    m_path = newPath;
+    return true;
 }
 
 QJsonObject SkinModel::toJSON() const

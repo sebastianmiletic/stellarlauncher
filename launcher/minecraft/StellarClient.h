@@ -1,0 +1,112 @@
+// SPDX-License-Identifier: GPL-3.0-only
+#pragma once
+
+#include <QCryptographicHash>
+#include <QDir>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QVersionNumber>
+
+#include "FileSystem.h"
+#include "minecraft/MinecraftInstance.h"
+
+namespace StellarClient {
+inline const QString toolsJar = QStringLiteral("stellar-client.jar");
+
+inline QHash<QString, QString> versions(const MinecraftInstance* instance)
+{
+    // A fresh gallery item has not run the component resolver yet.
+    QFile manifest(QDir(instance->instanceRoot()).filePath("mmc-pack.json"));
+    QHash<QString, QString> result;
+    if (manifest.open(QIODevice::ReadOnly)) {
+        const auto components = QJsonDocument::fromJson(manifest.readAll()).object().value("components").toArray();
+        for (const auto& entry : components) {
+            const auto component = entry.toObject();
+            if (!component.value("disabled").toBool())
+                result.insert(component.value("uid").toString(), component.value("version").toString());
+        }
+    }
+    return result;
+}
+
+inline bool hasSupportedTitle(const QString& version)
+{
+    qsizetype suffix = 0;
+    const auto release = QVersionNumber::fromString(version, &suffix);
+    return suffix == version.size() && release >= QVersionNumber(1, 21, 9) && release <= QVersionNumber(26, 3);
+}
+
+inline Result<> updateBundledFile(const QString& target, const QString& resource, const QByteArray& previousHash)
+{
+    if (QFile::exists(target)) {
+        TRY_INTO(const auto current, FS::read(target))
+        if (QCryptographicHash::hash(current, QCryptographicHash::Sha256).toHex() != previousHash)
+            return {};
+    }
+    TRY_INTO(const auto bundled, FS::read(resource))
+    return FS::write(target, bundled);
+}
+
+inline Result<> prepareTitle(MinecraftInstance* instance, bool manual = false)
+{
+    const auto version = versions(instance).value("net.minecraft");
+    if (!hasSupportedTitle(version))
+        return {};
+
+    const QDir game(instance->gameRoot());
+    const auto marker = game.filePath(".stellar-title-installed");
+    const auto target = game.filePath("resourcepacks/Stellar Look.zip");
+    if (manual || QFile::exists(target) || !QFile::exists(marker)) {
+        TRY(updateBundledFile(target, ":/archive-look.zip",
+            "e136389352707b6605e5e2c701a7a10976122aa22d18418f42f6b9d7c5888b6a"))
+    }
+    if (!manual && QFile::exists(marker))
+        return {};
+
+    const auto options = game.filePath("options.txt");
+    QByteArray contents;
+    if (QFile::exists(options)) {
+        TRY_INTO(contents, FS::read(options))
+    }
+
+    auto lines = contents.split('\n');
+    auto entry = std::find_if(lines.begin(), lines.end(), [](const auto& line) {
+        return line.startsWith("resourcePacks:");
+    });
+    QJsonArray packs{QStringLiteral("vanilla")};
+    if (entry != lines.end()) {
+        QJsonParseError error;
+        const auto selected = QJsonDocument::fromJson(entry->mid(14).trimmed(), &error);
+        if (error.error != QJsonParseError::NoError || !selected.isArray())
+            return std::unexpected(QStringLiteral("Minecraft resource-pack options could not be read."));
+        packs = selected.array();
+    }
+
+    const QString stellar = QStringLiteral("file/Stellar Look.zip");
+    if (!packs.contains(stellar)) {
+        packs.append(stellar);
+        const auto line = "resourcePacks:" + QJsonDocument(packs).toJson(QJsonDocument::Compact);
+        if (entry == lines.end())
+            lines.append(line);
+        else
+            *entry = line + (entry->endsWith('\r') ? "\r" : "");
+        if (lines.empty() || !lines.last().isEmpty())
+            lines.append(QByteArray());
+        TRY(FS::write(options, lines.join('\n')))
+    }
+    return FS::write(marker, "1\n");
+}
+
+inline Result<> installTools(MinecraftInstance* instance)
+{
+    const QDir game(instance->gameRoot());
+    const auto target = game.filePath("mods/" + toolsJar);
+    const auto disabled = target + ".disabled";
+    if (QFile::exists(disabled) && !QFile::exists(target) && !QFile::rename(disabled, target))
+        return std::unexpected(QStringLiteral("Could not enable the installed Stellar Client mod."));
+    return updateBundledFile(target, ":/stellar-client.jar",
+        "e3a44ad86c710e1c2c0b42912f6c9febca327d3f7927218a57c8dadef0de4d59");
+}
+}

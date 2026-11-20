@@ -19,7 +19,7 @@
 #pragma once
 
 #include <QDialog>
-#include <QItemSelection>
+#include <QModelIndex>
 #include <QLabel>
 #include <QPixmap>
 
@@ -42,9 +42,7 @@ class SkinManageDialog : public QDialog, public SkinProvider {
     QHash<QString, QImage> capes() override;
 
    public slots:
-    void selectionChanged(const QItemSelection&, const QItemSelection&);
-    void activated(QModelIndex);
-    void delayed_scroll(QModelIndex);
+    void selectionChanged(const QModelIndex& index);
     void on_openDirBtn_clicked();
     void on_fileBtn_clicked();
     void on_urlBtn_clicked();
@@ -54,12 +52,12 @@ class SkinManageDialog : public QDialog, public SkinProvider {
     void on_steveBtn_toggled(bool checked);
     void on_resetBtn_clicked();
     void show_context_menu(const QPoint& pos);
-    bool eventFilter(QObject* obj, QEvent* ev) override;
     void on_action_Rename_Skin_triggered(bool checked);
     void on_action_Delete_Skin_triggered(bool checked);
 
    private:
     void setupCapes();
+    void updatePreview();
 
    private:
     MinecraftAccountPtr m_acct;
@@ -70,4 +68,5 @@ class SkinManageDialog : public QDialog, public SkinProvider {
     QHash<QString, int> m_capesIdx;
     SkinOpenGLWindow* m_skinPreview = nullptr;
     QLabel* m_skinPreviewLabel = nullptr;
+    QWidget* m_previewContainer = nullptr;
 };

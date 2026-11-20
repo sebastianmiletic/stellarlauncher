@@ -532,18 +532,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     statusBar()->hide();
     auto* gallery = new StellarGallery({
         [this] { addInstance(); },
-        [this] {
-            const auto file = QFileDialog::getOpenFileName(this, tr("Import Instance"), {},
-                                                          tr("Minecraft packs (*.zip *.mrpack)"));
-            if (!file.isEmpty())
-                processURLs({ QUrl::fromLocalFile(file) });
-        },
+        [this](const QString& file) { processURLs({QUrl::fromLocalFile(file)}); },
         [this] { on_actionManageAccounts_triggered(); },
         [this] { on_actionManageSkins_triggered(); },
-        [this](const QString& id) {
-            if (auto* instance = APPLICATION->instances()->getInstanceById(id))
-                installStellarLook(this, QDir(instance->gameRoot()));
-        },
     }, this);
     setWindowFlag(Qt::FramelessWindowHint);
     setWindowTitle(tr("Stellar Launcher"));
@@ -1557,12 +1548,10 @@ void MainWindow::on_actionManageSkins_triggered()
 {
     auto account = APPLICATION->accounts()->defaultAccount();
 
-    if (account && (account->accountType() == AccountType::MSA) && !account->isActive()) {
-        SkinManageDialog dialog(this, account);
-        dialog.exec();
-        return;
-    }
-    DesktopServices::openUrl(QUrl("https://www.minecraft.net/en-us/msaprofile/mygames/editskin"));
+    if (account && account->accountType() != AccountType::MSA)
+        account.reset();
+    SkinManageDialog dialog(this, account);
+    dialog.exec();
 }
 
 void MainWindow::on_actionManageAccounts_triggered()

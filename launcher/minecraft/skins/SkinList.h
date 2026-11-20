@@ -32,6 +32,10 @@ class SkinList : public QAbstractListModel {
     explicit SkinList(QObject* parent, QString path, MinecraftAccountPtr acct);
     virtual ~SkinList() { save(); };
 
+    enum Collection { Personal, MinecraftDefaults, Downloaded };
+    enum Role { CollectionRole = Qt::UserRole + 1 };
+
+    static Collection collection(const SkinModel& skin);
     int getSkinIndex(const QString& key) const;
 
     virtual QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -46,7 +50,7 @@ class SkinList : public QAbstractListModel {
     bool deleteSkin(const QString& key, bool trash);
 
     void installSkins(const QStringList& iconFiles);
-    QString installSkin(const QString& file, const QString& name = {});
+    QString installSkin(const QString& file, const QString& name = {}, QString* installedPath = nullptr);
 
     const SkinModel* skin(const QString& key) const;
     SkinModel* skin(const QString& key);

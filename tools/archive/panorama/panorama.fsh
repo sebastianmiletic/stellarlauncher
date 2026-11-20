@@ -34,20 +34,23 @@ void main() {
     vec2 uv = 0.5 + (screen - 0.5) * cover;
     float phase = atan(ModelViewMat[0].z, ModelViewMat[0].x);
 
-    // Advect the image locally along the disk. The inner mask keeps the
-    // event horizon and its lensed upper rim anchored.
-    vec2 disk = (uv - vec2(0.5, 0.73)) * vec2(1.0, 3.0);
+    // Rotate the disk texture in its projected orbital plane.
+    // The background and the dark horizon stay in view space.
+    vec2 disk = (uv - vec2(0.5, 0.73)) * vec2(1.0, 4.2);
     float radius = length(disk);
     float angle = atan(disk.y, disk.x);
-    float ring = smoothstep(0.10, 0.22, radius) * (1.0 - smoothstep(0.48, 0.70, radius));
-    ring *= smoothstep(0.56, 0.73, uv.y);
-    float drift = ring * (0.014 * sin(angle * 4.0 + phase * 12.0 + radius * 19.0)
-                        + 0.010 * sin(angle * 7.0 - phase * 20.0 + radius * 31.0));
-    vec2 tangent = vec2(-disk.y, disk.x / 3.0);
-    vec2 moving = clamp(uv + tangent * drift, 0.001, 0.999);
-    vec3 diskColor = texture(Sampler0, vec3(moving.x * 2.0 - 1.0, 1.0 - moving.y * 2.0, 1.0)).rgb;
-    float flowLight = 1.0 + ring * 0.17 * sin(angle * 6.0 - phase * 15.0 + radius * 14.0);
-    float sky = (1.0 - smoothstep(0.24, 0.54, uv.y)) * (1.0 - smoothstep(0.03, 0.16, diskColor.r));
-    float specks = stars(uv + vec2(sin(phase * 2.0), cos(phase * 2.0)) * 0.012, phase) * sky;
-    fragColor = vec4(diskColor * flowLight + vec3(specks * 0.52), 1.0);
+    float orbit = phase * 8.0;
+    float rotated = angle - orbit - radius * 1.7;
+    vec2 source = vec2(0.5, 0.73) + radius * vec2(cos(rotated), sin(rotated) / 4.2);
+    vec2 textureUv = uv;
+    float mask = smoothstep(0.12, 0.29, radius) * (1.0 - smoothstep(0.58, 0.72, radius));
+    mask *= smoothstep(0.60, 0.73, uv.y);
+    vec3 base = texture(Sampler0, vec3(textureUv.x * 2.0 - 1.0, textureUv.y * 2.0 - 1.0, 1.0)).rgb;
+    vec3 orbitTexture = texture(Sampler0, vec3(source.x * 2.0 - 1.0, source.y * 2.0 - 1.0, 1.0)).rgb;
+    vec3 color = mix(base, orbitTexture, 0.46 * mask * smoothstep(0.02, 0.23, base.r));
+    float filaments = sin(11.0 * (angle - orbit) + radius * 58.0) * 0.15;
+    color *= 1.0 + filaments * mask;
+    float sky = (1.0 - smoothstep(0.20, 0.54, uv.y)) * (1.0 - smoothstep(0.03, 0.16, base.r));
+    float specks = stars(uv, phase) * sky;
+    fragColor = vec4(color + vec3(specks * 0.52), 1.0);
 }

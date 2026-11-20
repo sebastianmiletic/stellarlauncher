@@ -20,14 +20,75 @@
 
 #include <QFileInfo>
 #include <QMimeData>
+#include <QSaveFile>
+
+#include "Application.h"
+#include "archive/ArchiveReader.h"
 
 #include "FileSystem.h"
 #include "Json.h"
 #include "minecraft/skins/SkinModel.h"
 
+namespace {
+const QHash<QString, bool> defaultSkins{
+    {"Alex", true}, {"Ari", false}, {"Efe", true}, {"Kai", false}, {"Makena", true},
+    {"Noor", true}, {"Steve", false}, {"Sunny", false}, {"Zuri", false}
+};
+
+void cacheDefaults(const QDir& directory)
+{
+    QStringList missing;
+    for (auto it = defaultSkins.cbegin(); it != defaultSkins.cend(); ++it) {
+        if (!directory.exists(it.key() + ".png"))
+            missing.append(it.key());
+    }
+    if (missing.isEmpty())
+        return;
+
+    const QDir clients(QDir(APPLICATION->dataRoot()).filePath("libraries/com/mojang/minecraft"));
+    for (const auto& version : clients.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::Reversed)) {
+        const auto client = clients.filePath(version + "/minecraft-" + version + "-client.jar");
+        if (!QFileInfo::exists(client))
+            continue;
+        QHash<QString, QString> paths;
+        for (const auto& name : missing) {
+            paths.insert(QStringLiteral("assets/minecraft/textures/entity/player/%1/%2.png")
+                             .arg(defaultSkins.value(name) ? "slim" : "wide", name.toLower()),
+                         name);
+        }
+        MMCZip::ArchiveReader reader(client);
+        reader.parse(std::function<Result<bool>(MMCZip::ArchiveReader::File*)>{[&](auto* entry) -> Result<bool> {
+            const auto name = paths.value(entry->filename());
+            if (name.isEmpty() || !entry->isFile())
+                return false;
+            const auto bytes = entry->readAll();
+            if (bytes && bytes->size() < 64 * 1024 && QImage::fromData(*bytes, "PNG").size() == QSize(64, 64) &&
+                QDir().mkpath(directory.absolutePath())) {
+                QSaveFile output(directory.filePath(name + ".png"));
+                if (output.open(QIODevice::WriteOnly) && output.write(*bytes) == bytes->size() && output.commit())
+                    missing.removeOne(name);
+            }
+            return missing.isEmpty();
+        }});
+        if (missing.isEmpty())
+            return;
+    }
+}
+}
+
+SkinList::Collection SkinList::collection(const SkinModel& skin)
+{
+    const auto folder = QFileInfo(skin.getPath()).dir().dirName();
+    if (folder == "Minecraft Defaults")
+        return MinecraftDefaults;
+    if (folder == "Downloaded")
+        return Downloaded;
+    return Personal;
+}
+
 SkinList::SkinList(QObject* parent, QString path, MinecraftAccountPtr acct) : QAbstractListModel(parent), m_acct(acct)
 {
-    FS::ensureFolderPathExists(m_dir.absolutePath());
+    cacheDefaults(QDir(QDir(path).absoluteFilePath("Minecraft Defaults")));
     m_dir.setFilter(QDir::Readable | QDir::NoDotAndDotDot | QDir::Files | QDir::Dirs);
     m_dir.setSorting(QDir::Name | QDir::IgnoreCase | QDir::LocaleAware);
     m_watcher.reset(new QFileSystemWatcher(this));
@@ -88,8 +149,8 @@ bool SkinList::update()
     }
 
     bool needsSave = false;
-    const auto& skin = m_acct->accountData()->minecraftProfile.skin;
-    if (!skin.url.isEmpty() && !skin.data.isEmpty()) {
+    const auto skin = m_acct ? m_acct->accountData()->minecraftProfile.skin : Skin{};
+    if (m_acct && !skin.url.isEmpty() && !skin.data.isEmpty()) {
         QPixmap skinTexture;
         SkinModel* nskin = nullptr;
         for (auto i = 0; i < newSkins.size(); i++) {
@@ -136,6 +197,17 @@ bool SkinList::update()
             if (add) {
                 newSkins.append(w);
                 needsSave = true;
+            }
+        }
+    }
+    for (const auto* category : {"Minecraft Defaults", "Downloaded"}) {
+        const QDir folder(m_dir.absoluteFilePath(QString::fromLatin1(category)));
+        for (const auto& file : folder.entryInfoList({"*.png"}, QDir::Files | QDir::Readable, QDir::Name)) {
+            SkinModel skin(file.absoluteFilePath());
+            if (skin.isValid()) {
+                if (collection(skin) == MinecraftDefaults && defaultSkins.value(skin.name()))
+                    skin.setModel(SkinModel::SLIM);
+                newSkins.append(skin);
             }
         }
     }
@@ -223,7 +295,9 @@ Qt::ItemFlags SkinList::flags(const QModelIndex& index) const
 {
     Qt::ItemFlags f = Qt::ItemIsDropEnabled | QAbstractListModel::flags(index);
     if (index.isValid()) {
-        f |= (Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsEditable);
+        f |= (Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+        if (index.row() < m_skinList.size() && collection(m_skinList[index.row()]) == Personal)
+            f |= Qt::ItemIsEditable;
     }
     return f;
 }
@@ -248,9 +322,12 @@ QVariant SkinList::data(const QModelIndex& index, int role) const
             }
             return preview;
         }
+        case Qt::UserRole:
+            return skin.getPath();
+        case CollectionRole:
+            return collection(skin);
         case Qt::DisplayRole:
         case Qt::ToolTipRole:
-        case Qt::UserRole:
         case Qt::EditRole:
             return skin.name();
         default:
@@ -289,7 +366,7 @@ QString getUniqueFile(const QString& root, const QString& file)
 
     return result;
 }
-QString SkinList::installSkin(const QString& file, const QString& name)
+QString SkinList::installSkin(const QString& file, const QString& name, QString* installedPath)
 {
     if (file.isEmpty())
         return tr("Path is empty.");
@@ -305,13 +382,18 @@ QString SkinList::installSkin(const QString& file, const QString& name)
 
     QString target = getUniqueFile(m_dir.absolutePath(), name.isEmpty() ? fileinfo.fileName() : name);
 
-    return QFile::copy(file, target) ? "" : tr("Unable to copy file");
+    if (!QFile::copy(file, target))
+        return tr("Unable to copy file");
+    if (installedPath)
+        *installedPath = target;
+    update();
+    return {};
 }
 
 int SkinList::getSkinIndex(const QString& key) const
 {
     for (int i = 0; i < m_skinList.count(); i++) {
-        if (m_skinList[i].name() == key) {
+        if (m_skinList[i].getPath() == key || m_skinList[i].name() == key) {
             return i;
         }
     }
@@ -337,16 +419,20 @@ SkinModel* SkinList::skin(const QString& key)
 bool SkinList::deleteSkin(const QString& key, bool trash)
 {
     int idx = getSkinIndex(key);
-    if (idx != -1) {
+    if (idx != -1 && collection(m_skinList[idx]) == Personal) {
         auto s = m_skinList[idx];
         if (trash) {
             if (FS::trash(s.getPath(), nullptr)) {
+                beginRemoveRows({}, idx, idx);
                 m_skinList.remove(idx);
+                endRemoveRows();
                 save();
                 return true;
             }
         } else if (QFile::remove(s.getPath())) {
+            beginRemoveRows({}, idx, idx);
             m_skinList.remove(idx);
+            endRemoveRows();
             save();
             return true;
         }
@@ -358,8 +444,9 @@ void SkinList::save()
 {
     QJsonObject doc;
     QJsonArray arr;
-    for (auto s : m_skinList) {
-        arr << s.toJSON();
+    for (const auto& skin : std::as_const(m_skinList)) {
+        if (collection(skin) == Personal)
+            arr << skin.toJSON();
     }
     doc["skins"] = arr;
     auto res = Json::write(doc, m_dir.absoluteFilePath("index.json"));
@@ -370,9 +457,11 @@ void SkinList::save()
 
 int SkinList::getSelectedAccountSkin()
 {
+    if (!m_acct)
+        return -1;
     const auto& skin = m_acct->accountData()->minecraftProfile.skin;
     for (int i = 0; i < m_skinList.count(); i++) {
-        if (m_skinList[i].getURL() == skin.url) {
+        if (!skin.url.isEmpty() && m_skinList[i].getURL() == skin.url) {
             return i;
         }
     }
@@ -389,11 +478,14 @@ bool SkinList::setData(const QModelIndex& idx, const QVariant& value, int role)
     if (row < 0 || row >= m_skinList.size())
         return false;
     auto& skin = m_skinList[row];
+    if (collection(skin) != Personal)
+        return false;
     auto newName = value.toString();
     if (skin.name() != newName) {
         if (!skin.rename(newName))
             return false;
         save();
+        emit dataChanged(idx, idx);
     }
     return true;
 }

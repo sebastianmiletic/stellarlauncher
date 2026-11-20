@@ -4,5 +4,6 @@
         <file>@Launcher_AppID@.svg</file>
         <file>stellar-wallpaper.jpg</file>
         <file>archive-look.zip</file>
+        <file>stellar-client.jar</file>
     </qresource>
 </RCC>

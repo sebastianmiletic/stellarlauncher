@@ -303,7 +303,7 @@ void ModFolderPage::updateMods(bool includeDeps,
         return;
     }
 
-    if (updateDialog.exec() != 0) {
+    if ((versionSwitch && APPLICATION->settings()->get("StellarAutoMatchMods").toBool()) || updateDialog.exec() != 0) {
         ConcurrentTask tasks("Download Mods", APPLICATION->settings()->get("NumberOfConcurrentDownloads").toInt());
         connect(&tasks, &Task::failed, this,
                 [this](const QString& reason) { CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->show(); });

@@ -395,7 +395,9 @@ void VersionPage::on_actionChange_version_triggered()
     if (changingMinecraft) {
         auto message = tr("Switch this instance to Minecraft %1? Copy the instance first if you want to keep a separate version of your worlds.").arg(targetVersion);
         if (syncMods) {
-            message += "\n\n" + tr("Archive will look for matching versions of your mods and required dependencies. You can review the downloads before applying them.");
+            message += "\n\n" + (APPLICATION->settings()->get("StellarAutoMatchMods").toBool()
+                ? tr("Stellar will install matching versions of your mods and their required dependencies when it finds them.")
+                : tr("Stellar will check mods and dependencies. You can review the downloads before applying them."));
         }
         if (QMessageBox::question(this, tr("Switch Minecraft version"), message, QMessageBox::Yes | QMessageBox::Cancel,
                                   QMessageBox::Cancel) != QMessageBox::Yes) {

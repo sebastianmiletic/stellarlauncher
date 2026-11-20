@@ -20,6 +20,11 @@ stage="$(mktemp -d "$workspace_dir/dist/.stellar-build.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
 cmake --install "$workspace_dir/build" --prefix "$stage"
 app="$stage/ArchiveLauncher.app"
+empty_library="$(find "$app/Contents" -type f -name '*.dylib' -size 0 -print -quit)"
+if [[ -n "$empty_library" ]]; then
+  echo "macOS packaging produced an empty library: $empty_library" >&2
+  exit 1
+fi
 codesign --force --deep --sign - "$app"
 codesign --verify --deep --strict "$app"
 "$app/Contents/MacOS/ArchiveLauncher" --version

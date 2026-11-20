@@ -42,6 +42,7 @@
 #include "FileSystem.h"
 #include "launch/LaunchTask.h"
 #include "minecraft/MinecraftInstance.h"
+#include "minecraft/StellarClient.h"
 
 #if defined(Q_OS_LINUX) && defined(ENABLE_GAMEMODE)
 #include "gamemode_client.h"
@@ -70,7 +71,10 @@ LauncherPartLaunch::LauncherPartLaunch(LaunchTask* parent)
         if (instance->property("stellarLaunchState").toString() != "java")
             return;
         for (const auto& line : lines) {
-            if (line.contains("minecraft:textures/atlas/gui.png") ||
+            // Modern clients log the rendering backend immediately before creating the game window.
+            // Atlas and legacy initialization messages cover clients without that marker.
+            if (line.contains("Backend library: LWJGL") || line.contains("LWJGL Version:") ||
+                line.contains("minecraft:textures/atlas/gui.png") ||
                 (line.contains("Created:") && line.contains("textures/atlas/blocks.png"))) {
                 instance->setProperty("stellarLaunchState", "ready");
                 break;
@@ -105,6 +109,8 @@ void LauncherPartLaunch::executeTask()
 
     m_launchScript = instance->createLaunchScript(m_session, m_targetToJoin);
     QStringList args = instance->javaArguments();
+    if (QDir(instance->gameRoot()).exists("mods/" + StellarClient::toolsJar))
+        args.append("-Dstellar.skinLibrary=" + QDir(APPLICATION->settings()->get("SkinsDir").toString()).absolutePath());
     QString allArgs = args.join(" ");
     emit logLine("Java arguments:\n  " + m_parent->censorPrivateInfo(allArgs) + "\n", MessageLevel::Launcher);
 

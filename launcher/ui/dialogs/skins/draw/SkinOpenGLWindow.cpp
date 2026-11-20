@@ -122,7 +122,7 @@ void SkinOpenGLWindow::initializeGL()
 
     initShaders();
 
-    generateBackgroundTexture(32, 32, 1);
+    generateBackgroundTexture(1, 1, 1);
 
     QImage skin, cape;
     bool slim = false;

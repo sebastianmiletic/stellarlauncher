@@ -12,6 +12,7 @@
 
 class QAbstractButton;
 class QFrame;
+class QComboBox;
 class QHBoxLayout;
 class QPropertyAnimation;
 class QPushButton;
@@ -23,10 +24,9 @@ class StellarGallery : public QWidget {
 public:
     struct Actions {
         std::function<void()> create;
-        std::function<void()> importPack;
+        std::function<void(const QString&)> importPack;
         std::function<void()> accounts;
         std::function<void()> skins;
-        std::function<void(const QString&)> installLook;
     };
 
     StellarGallery(Actions actions, QWidget* parent);
@@ -53,26 +53,29 @@ private:
     void openInstance(const QString& id);
     void closeInstance();
     void playInstance(const QString& id);
+    void launchChecked(const QString& id);
     void refreshInstance();
     void finishLaunch();
-    void showActions(int index);
+    void showActions(int index, QRect anchor = {});
     void showPreferences();
     void showAccounts();
     void updateAccountIcons();
     void showCreator();
     void showContent(const QString& id);
-    void copyInstance();
+    void showImport();
+    void previewImport(const QString& source);
+    void copyInstance(const QString& source, const QStringList& entries);
     void showWallpapers(const QString& instance);
     QFrame* makePanel(const QString& title);
     void dismissPanel();
     QStringList images(const Collection& collection) const;
     QString artworkPath(const QString& instance, const QString& version);
     QPixmap wallpaperPixmap(const QString& file);
-    QPixmap artwork(const QString& instance, const QString& version);
+    void scheduleThumbnails();
     void fetchArtwork(const Collection& collection);
     void updateArtwork();
     void updateLaunch();
-    void placePanel();
+    void placePanel(const QRect& anchor = {}, bool alignRight = false);
 
     Actions m_actions;
     QScrollArea* m_scroll;
@@ -80,21 +83,27 @@ private:
     QHBoxLayout* m_row;
     QPropertyAnimation* m_slide;
     QTimer* m_launchTimer;
+    QTimer* m_dragScroll;
     QTimer* m_saveSelection;
     QMetaObject::Connection m_detailRunningChanged;
     QPushButton* m_homeAccounts = nullptr;
+    QComboBox* m_loaderFilter = nullptr;
     QFrame* m_panel = nullptr;
     QWidget* m_detail = nullptr;
     QList<QAbstractButton*> m_tiles;
     QList<Collection> m_collections;
     QHash<QString, QPixmap> m_artwork;
+    QHash<QString, QPixmap> m_thumbnails;
+    QSet<QString> m_pendingThumbnails;
     QSet<QString> m_fetching;
     QSet<QString> m_attempted;
     QStringList m_ids;
+    QStringList m_allIds;
     QString m_selected;
     QString m_detailId;
     QString m_detailWallpaper;
     QString m_launching;
+    QString m_preflight;
     QString m_wallpapers;
     QElapsedTimer m_javaStartup;
     int m_index = 0;

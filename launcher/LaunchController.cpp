@@ -36,6 +36,7 @@
 
 #include "LaunchController.h"
 #include "Application.h"
+#include "minecraft/StellarClient.h"
 #include "launch/StellarLaunchProgress.h"
 #include "launch/steps/PrintServers.h"
 #include "minecraft/auth/AccountData.h"
@@ -394,6 +395,15 @@ void LaunchController::launchInstance()
         return;
     }
 
+    if (APPLICATION->settings()->get("StellarTitleScreen").toBool()) {
+        if (const auto title = StellarClient::prepareTitle(m_instance); !title)
+            qWarning() << "Could not enable the Stellar title screen:" << title.error();
+    }
+    const QDir mods(QDir(m_instance->gameRoot()).filePath("mods"));
+    if (mods.exists(StellarClient::toolsJar)) {
+        if (const auto tools = StellarClient::installTools(m_instance); !tools)
+            qWarning() << "Could not update the Stellar client:" << tools.error();
+    }
     m_launcher = m_instance->createLaunchTask(m_session, m_targetToJoin);
     if (!m_launcher) {
         emitFailed(tr("Couldn't instantiate a launcher."));

@@ -2,7 +2,7 @@
 
 <img src="tools/stellar-prism/screenshots/stellar-logo.png" width="96" alt="Stellar Launcher logo">
 
-[Download Stellar Launcher for Apple silicon](https://github.com/sebastianmiletic/stellarlauncher/releases/tag/stellar-v1.4.4)
+[Download Stellar Launcher for Apple silicon](https://github.com/sebastianmiletic/stellarlauncher/releases/latest)
 
 ![Stellar's wallpaper gallery with three sample Minecraft instances](tools/stellar-prism/screenshots/gallery.png)
 
@@ -10,7 +10,7 @@ Stellar Launcher is a compact Minecraft Java launcher built on Prism Launcher’
 
 - **Change Minecraft version** in **Edit → Version**. Select the Minecraft component and choose **Change version**. Review compatible mod downloads after the component change. Stellar reports missing and locked mods so you can review them before launching.
 - **Play Minecraft** by opening an instance and selecting **Play**. To link an account, use **Minecraft Accounts → Add Microsoft**. Stellar installs Java and Minecraft directly. Open a saved world from **Edit → Worlds** or **Singleplayer** in Minecraft.
-- **Stellar Look** adds a fixed black-hole scene with an animated accretion disk on Java 26.3 and grayscale menus to Minecraft Java 1.21.9 through 26.3. Install the pack from **Mods, Packs & Shaders → Install Stellar Look** and enable it in Minecraft’s Resource Packs menu.
+- **Stellar Look** adds a fixed black-hole scene with an animated accretion disk on Java 26.3 and grayscale menus to Minecraft Java 1.21.9 through 26.3. Stellar enables the title screen on the first launch of each supported instance. To enable it again, use **Mods, Packs & Shaders → Enable Stellar title screen**.
 - **Updates** use Sparkle on macOS. Stellar checks in the background on startup when automatic updates are enabled. Updates are installed from signed releases. Release builds without a configured Sparkle key and feed use manual downloads from GitHub.
 
 ## Install
@@ -33,19 +33,31 @@ Stellar Launcher is a compact Minecraft Java launcher built on Prism Launcher’
 
 The approval requirement applies to both browser and QR/device-code sign-in. Browser sign-in uses PKCE and a loopback callback. Signed-in profiles use the engine’s token refresh and ownership checks. Stellar stores accounts in a user-restricted file in its own data directory.
 
+## In-game tools
+
+For a **Minecraft Java 26.3** instance with **Fabric Loader 0.19.5 or later**, open **Mods, Packs & Shaders → Install in-game tools**. The **Stellar** button appears on Minecraft's title and pause menus.
+
+- **Mods** searches Modrinth for Fabric projects matching the current Minecraft version. It also enables and disables installed mod files. Changes take effect after restarting Minecraft.
+- **Shaders** browses Modrinth shader packs and opens the live shader picker when a compatible version of Iris is installed. Search results open their Modrinth project pages.
+- **Skins** uses Stellar’s local PNG library. Applying a skin requires a signed-in Minecraft account. Rejoin the world to refresh the applied skin.
+- **Resource packs** opens Minecraft’s in-game pack manager.
+- **Performance** shows the median and 95th-percentile frame time from up to 240 recent gameplay frames plus the time from the world loading screen to the first playable frame.
+
 ## Stellar Gallery
 
 The gallery and Minecraft launch engine run in one Qt application. Stellar uses its own library under `~/Library/Application Support/Stellar Launcher`.
 
 ![The instance details view with wallpaper, Play, game version, loader and playtime](tools/stellar-prism/screenshots/instance-details.png)
 
-Scroll past the last wallpaper card to **Create New Instance**, or press Command-N. The quick creator offers Vanilla and Fabric. **More Options** opens snapshots, other loaders, and modpacks. Right-click the create tile for **Import Instance** or **Copy Existing Instance** to bring over existing instances and worlds. Use **Minecraft Accounts** to add, switch, or remove Microsoft accounts. Online sign-in requires a Minecraft-approved Stellar application ID as described above. **Change Skin** opens the in-app editor for the signed-in Microsoft account.
+Scroll past the last wallpaper card to **Create New Instance**, or press Command-N. The quick creator offers Vanilla and Fabric. With Fabric, it can add compatible stable releases of Sodium, Lithium, and FerriteCore for the selected game version. **More Options** opens snapshots, other loaders, and modpacks. Choose **Import…** on the create tile to pick an installed Prism instance, browse for a Prism/MultiMC folder, or open a modpack archive. Review the exact file list and total size before copying a Prism or MultiMC folder. Archive previews show entries and any Modrinth downloads listed in the pack. Use **Minecraft Accounts** to add, switch, or remove Microsoft accounts. Online sign-in requires a Minecraft-approved Stellar application ID as described above. **Change Skin** opens the in-app editor for the signed-in Microsoft account.
 
-**General settings** in the account menu (Command-comma on macOS) controls motion, Minecraft fullscreen, and the launch indicator. Choose **Wallpaper wave**, **Subtle progress bar**, or **Status only**.
+**General settings** in the account menu (Command-comma on macOS) controls motion, Minecraft fullscreen, and the launch indicator. Choose **Wallpaper wave**, **Wallpaper fade**, **Horizontal wipe**, **Iris reveal**, **Subtle progress bar**, or **Status only**.
+
+Drag cards into your preferred order or narrow the gallery by mod loader. From **General settings** on macOS, **Deduplicate identical mods** lets APFS share the storage blocks of matching enabled JARs while keeping each instance independent. Folder imports use the same optimization. Before launching, Stellar warns about recognizable wrong-loader JARs and incompatible Minecraft or Fabric Loader requirements from Fabric metadata.
 
 Click a wallpaper card once to open details, or double-click to launch directly. Right-click a card for Play, Edit Instance, Mods, Packs & Shaders, and wallpaper options. The content manager can add local files or browse compatible Modrinth projects. Use the arrow keys to select an instance or the create tile, Return to open it or play from instance details, Shift-F10 for options, and Escape to dismiss the panel.
 
-Stellar matches installed Java releases to official artwork where Minecraft publishes a matching collection. Open **Change Wallpaper** from an instance and select **Animated GIFs** to import local GIFs (up to 64 MB and 4096 pixels per side). GIFs animate while that instance’s details are open. Turn on **Shuffle this collection** to choose a wallpaper each time you open an instance. The library uses still previews, and disabling motion also pauses GIF playback when opening details.
+Stellar matches installed Java releases to official artwork where Minecraft publishes a matching collection. Open **Change Wallpaper** from an instance and select **Animated GIFs** to import local GIFs (up to 64 MB and 4096 pixels per side). The chooser previews still images and GIFs. Animated wallpapers pause when Stellar is hidden, minimized or in the background. Turn on **Shuffle this collection** to choose a wallpaper each time you open an instance. The library uses still previews, and disabling motion also pauses GIF playback when opening details.
 
 | Instance options | New instance | Settings |
 | --- | --- | --- |

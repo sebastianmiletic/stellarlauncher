@@ -5,6 +5,7 @@
 #include <QApplication>
 #include <QAbstractItemView>
 #include <QCheckBox>
+#include <QCursor>
 #include <QComboBox>
 #include <QDesktopServices>
 #include <QContextMenuEvent>
@@ -12,6 +13,10 @@
 #include <QGridLayout>
 #include <QDir>
 #include <QDirListing>
+#include <QDrag>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QDynamicPropertyChangeEvent>
 #include <QFileDialog>
 #include <QFrame>
 #include <QGraphicsOpacityEffect>
@@ -23,6 +28,8 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QShortcut>
+#include <QStandardPaths>
+#include <QPointer>
 #include <QListWidget>
 #include <QMouseEvent>
 #include <QMovie>
@@ -59,6 +66,8 @@
 #include "minecraft/auth/AccountList.h"
 #include "ui/dialogs/MSALoginDialog.h"
 #include "minecraft/PackProfile.h"
+#include "minecraft/StellarClient.h"
+#include "minecraft/StellarMods.h"
 #include "settings/SettingsObject.h"
 #include "meta/Index.h"
 #include "meta/Version.h"
@@ -114,6 +123,71 @@ bool motionEnabled()
 {
     return APPLICATION->settings()->get("StellarMotion").toBool();
 }
+
+class WallpaperPlayback final : public QObject {
+public:
+    explicit WallpaperPlayback(QWidget* host) : QObject(host), m_host(host)
+    {
+        host->installEventFilter(this);
+        if (host->window() != host)
+            host->window()->installEventFilter(this);
+        connect(qApp, &QGuiApplication::applicationStateChanged, this, [this] { sync(); });
+        connect(&movie, &QMovie::finished, this, [this] { sync(); });
+    }
+
+    void setFile(const QString& path, const QSize& target)
+    {
+        if (movie.fileName() == path)
+            return;
+        movie.stop();
+        movie.setFileName(QString());
+        if (!path.endsWith(".gif", Qt::CaseInsensitive) || QFileInfo(path).size() > 64 * 1024 * 1024)
+            return;
+        const auto size = QImageReader(path, "gif").size();
+        if (!size.isValid() || size.width() > 4096 || size.height() > 4096)
+            return;
+        movie.setFileName(path);
+        movie.setScaledSize(size.boundedTo(size.scaled(target, Qt::KeepAspectRatio)));
+        sync();
+    }
+
+    QMovie movie;
+
+protected:
+    bool eventFilter(QObject*, QEvent* event) override
+    {
+        switch (event->type()) {
+        case QEvent::Hide:
+            movie.setPaused(true);
+            break;
+        case QEvent::Show:
+        case QEvent::WindowStateChange:
+            QTimer::singleShot(0, this, [this] { sync(); });
+            break;
+        default:
+            break;
+        }
+        return false;
+    }
+
+private:
+    void sync()
+    {
+        if (movie.fileName().isEmpty())
+            return;
+        const bool visible = motionEnabled() && m_host->isVisible() && !m_host->window()->isMinimized()
+            && QGuiApplication::applicationState() == Qt::ApplicationActive;
+        if (!visible) {
+            movie.setPaused(true);
+        } else if (movie.state() == QMovie::Paused) {
+            movie.setPaused(false);
+        } else if (movie.state() == QMovie::NotRunning) {
+            movie.start();
+        }
+    }
+
+    QWidget* m_host;
+};
 
 class ButtonFeedback final : public QObject {
 public:
@@ -226,12 +300,82 @@ private:
 QIcon accountFace(const MinecraftAccount* account)
 {
     if (account) {
-        const auto face = account->getFace();
+        const auto face = account->getFace(36, 36);
         if (!face.isNull())
             return QIcon(face);
     }
     return QIcon(":/icons/multimc/128x128/instances/steve_legacy.png");
 }
+
+bool wallpaperEffect(const QString& effect)
+{
+    return effect == "wave" || effect == "fade" || effect == "wipe" || effect == "iris";
+}
+
+class LibraryReveal final : public QWidget {
+public:
+    explicit LibraryReveal(QWidget* parent)
+        : QWidget(parent), m_logo(APPLICATION->logo().pixmap(66, 66))
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setGeometry(parent->rect());
+        auto* transition = new QVariantAnimation(this);
+        transition->setDuration(155);
+        transition->setStartValue(0.0);
+        transition->setEndValue(1.0);
+        transition->setEasingCurve(QEasingCurve::OutCubic);
+        connect(transition, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+            m_reveal = value.toReal();
+            update();
+        });
+        connect(transition, &QVariantAnimation::finished, this, &QObject::deleteLater);
+        show();
+        transition->start();
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter paint(this);
+        QColor backdrop(canvas);
+        backdrop.setAlphaF(1 - m_reveal);
+        paint.fillRect(rect(), backdrop);
+        paint.setOpacity((1 - m_reveal) * (1 - m_reveal));
+        paint.drawPixmap(QRect(width() / 2 - 33, height() / 2 - 37 - qRound(7 * m_reveal), 66, 66), m_logo);
+    }
+
+private:
+    QPixmap m_logo;
+    qreal m_reveal = 0;
+};
+
+class AccountAvatar final : public QPushButton {
+public:
+    explicit AccountAvatar(QWidget* parent) : QPushButton(parent)
+    {
+        setFixedSize(36, 36);
+        setCursor(Qt::PointingHandCursor);
+        setAccessibleName(tr("Minecraft Accounts"));
+        setToolTip(tr("Minecraft Accounts"));
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter paint(this);
+        paint.setRenderHint(QPainter::Antialiasing);
+        QPainterPath clip;
+        clip.addRoundedRect(rect(), 7, 7);
+        paint.setClipPath(clip);
+        icon().paint(&paint, rect());
+        if (underMouse() || isDown())
+            paint.fillRect(rect(), QColor(20, 20, 22, isDown() ? 65 : 32));
+        if (hasFocus() && window()->testAttribute(Qt::WA_KeyboardFocusChange)) {
+            paint.setPen(QPen(QColor("#e9e7f1"), 2));
+            paint.drawPath(clip);
+        }
+    }
+};
 
 class GalleryTile final : public QAbstractButton {
 public:
@@ -267,16 +411,56 @@ public:
         }
     }
     void setArtwork(const QPixmap& image) { m_image = image; update(); }
-    std::function<void()> options;
+    std::function<void(const QPoint&)> options;
     std::function<void()> open;
     std::function<void()> play;
+    std::function<void(const QString&, bool)> reorder;
+    std::function<void(bool)> dragging;
+    QString instanceId;
 
 protected:
     void mousePressEvent(QMouseEvent* event) override
     {
-        if (event->button() == Qt::LeftButton)
+        if (event->button() == Qt::LeftButton) {
             m_doubleClick = false;
+            m_pressPosition = event->position().toPoint();
+        }
         QAbstractButton::mousePressEvent(event);
+    }
+
+    void mouseMoveEvent(QMouseEvent* event) override
+    {
+        if (isDown() && !instanceId.isEmpty() && event->buttons().testFlag(Qt::LeftButton)
+            && (event->position().toPoint() - m_pressPosition).manhattanLength() >= QApplication::startDragDistance()) {
+            ++m_clickNumber;
+            setDown(false);
+            auto* drag = new QDrag(this);
+            auto* data = new QMimeData;
+            data->setData("application/x-stellar-instance", instanceId.toUtf8());
+            drag->setMimeData(data);
+            drag->setPixmap(grab().scaled(108, 108, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            dragging(true);
+            drag->exec(Qt::MoveAction);
+            dragging(false);
+            return;
+        }
+        QAbstractButton::mouseMoveEvent(event);
+    }
+
+    void dragEnterEvent(QDragEnterEvent* event) override
+    {
+        if (event->source() && event->source() != this && event->mimeData()->hasFormat("application/x-stellar-instance"))
+            event->acceptProposedAction();
+    }
+
+    void dropEvent(QDropEvent* event) override
+    {
+        if (!reorder)
+            return;
+        const auto source = QString::fromUtf8(event->mimeData()->data("application/x-stellar-instance"));
+        event->acceptProposedAction();
+        const bool after = event->position().x() >= width() / 2.0;
+        QTimer::singleShot(0, this, [this, source, after] { reorder(source, after); });
     }
 
     void mouseReleaseEvent(QMouseEvent* event) override
@@ -314,7 +498,7 @@ protected:
         ++m_clickNumber;
         if (options) {
             event->accept();
-            options();
+            options(event->globalPos());
         }
     }
 
@@ -372,6 +556,7 @@ private:
     ButtonFeedback m_feedback;
     double m_border = 0;
     int m_clickNumber = 0;
+    QPoint m_pressPosition;
     bool m_doubleClick = false;
 };
 
@@ -381,7 +566,7 @@ public:
                    const std::function<void()>& options, const std::function<void()>& accounts)
         : QWidget(parent), m_title(new QLabel(this)), m_description(new QLabel(this)),
           m_play(new GalleryButton(this)), m_progress(new QProgressBar(this)),
-          m_accounts(new GalleryButton(this)), m_movie(this)
+          m_accounts(new AccountAvatar(this))
     {
         setObjectName("stellarInstance");
         auto* layout = new QVBoxLayout(this);
@@ -396,11 +581,6 @@ public:
         header->addWidget(backButton);
         header->addStretch();
         auto* accountButton = m_accounts;
-        accountButton->setIconSize(QSize(24, 24));
-        accountButton->setObjectName("stellarArtButton");
-        accountButton->setToolTip(tr("Minecraft Accounts"));
-        accountButton->setAccessibleName(tr("Minecraft Accounts"));
-        accountButton->setFixedWidth(38);
         connect(accountButton, &QPushButton::clicked, this, accounts);
         header->addWidget(accountButton);
         layout->addLayout(header);
@@ -442,36 +622,26 @@ public:
         connect(menu, &QPushButton::clicked, this, options);
         footer->addWidget(menu, 0, Qt::AlignTop);
         layout->addLayout(footer);
+        m_waveFill.setDuration(175);
+        m_waveFill.setEasingCurve(QEasingCurve::OutCubic);
+        connect(&m_waveFill, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+            m_fill = value.toDouble();
+            update();
+        });
         m_wave.setDuration(1800);
         m_wave.setLoopCount(-1);
         m_wave.setStartValue(0.0);
         m_wave.setEndValue(1.0);
         connect(&m_wave, &QVariantAnimation::valueChanged, this, [this] { update(); });
-        connect(&m_movie, &QMovie::frameChanged, this, [this] { update(); });
-        connect(&m_movie, &QMovie::finished, this, [this] {
-            if (isVisible() && motionEnabled())
-                m_movie.start();
-        });
+        connect(&m_playback->movie, &QMovie::frameChanged, this, [this] { update(); });
     }
 
     void setAccountIcon(const QIcon& icon) { m_accounts->setIcon(icon); }
+    QRect accountAnchor(QWidget* gallery) const { return {m_accounts->mapTo(gallery, QPoint()), m_accounts->size()}; }
 
     void setWallpaperFile(const QString& path)
     {
-        const auto animated = path.endsWith(".gif", Qt::CaseInsensitive) && motionEnabled() ? path : QString();
-        if (m_movie.fileName() == animated)
-            return;
-        m_movie.stop();
-        m_movie.setFileName(animated);
-        if (animated.isEmpty())
-            return;
-        const QFileInfo file(animated);
-        QImageReader reader(animated, "gif");
-        const auto size = reader.size();
-        if (file.size() <= 64 * 1024 * 1024 && size.isValid() && size.width() <= 4096 && size.height() <= 4096) {
-            m_movie.setScaledSize(size.boundedTo(size.scaled(1400, 800, Qt::KeepAspectRatio)));
-            m_movie.start();
-        }
+        m_playback->setFile(motionEnabled() ? path : QString(), QSize(1400, 800));
     }
 
     void setInstance(const QString& name, const QString& info, const QPixmap& wallpaper)
@@ -495,17 +665,28 @@ public:
             m_play->setIcon(QIcon());
         else if (!busy && m_play->icon().isNull())
             m_play->setIcon(playIcon);
-        const bool wave = busy && animate &&
-            APPLICATION->settings()->get("StellarLaunchAnimation").toString() == "wave";
-        if (wave && m_wave.state() != QAbstractAnimation::Running) {
-            m_monochrome = QPixmap::fromImage(m_wallpaper.toImage().convertToFormat(QImage::Format_Grayscale8));
-            m_wave.start();
-        } else if (!wave && m_wave.state() == QAbstractAnimation::Running) {
+        m_effect = APPLICATION->settings()->get("StellarLaunchAnimation").toString();
+        const bool cover = busy && animate && wallpaperEffect(m_effect);
+        if (cover) {
+            if (m_wave.state() != QAbstractAnimation::Running) {
+                m_fill = 0.07;
+                m_monochrome = QPixmap::fromImage(m_wallpaper.toImage().convertToFormat(QImage::Format_Grayscale8));
+                m_wave.start();
+            }
+            const double targetFill = progress >= 0 ? 0.12 + 0.74 * progress / 100.0 : m_fill;
+            if (targetFill > m_fill && m_waveFill.endValue().toDouble() != targetFill) {
+                m_waveFill.stop();
+                m_waveFill.setStartValue(m_fill);
+                m_waveFill.setEndValue(targetFill);
+                m_waveFill.start();
+            }
+        } else if (m_wave.state() == QAbstractAnimation::Running) {
             m_wave.stop();
+            m_waveFill.stop();
+            m_waveFill.setEndValue(0.0);
             update();
         }
-        m_launchProgress = progress;
-        if (!wave && busy && (animate || progress >= 0)) {
+        if (!cover && busy && (animate || progress >= 0) && m_effect != "off") {
             const int maximum = progress >= 0 ? 100 : 0;
             if (m_progress->maximum() != maximum)
                 m_progress->setRange(0, maximum);
@@ -529,21 +710,32 @@ protected:
                 m_monochrome = QPixmap::fromImage(m_wallpaper.toImage().convertToFormat(QImage::Format_Grayscale8));
             drawArtwork(painter, hero, m_monochrome);
             const double phase = 6.283185307 * m_wave.currentValue().toDouble();
-            const double fill = m_launchProgress >= 0 ? 0.15 + 0.72 * m_launchProgress / 100.0 : 0.4;
-            const double baseline = hero.bottom() - hero.height() * fill;
-            QPainterPath color;
-            color.moveTo(0, hero.bottom());
-            for (int x = 0; x <= hero.width(); x += 8)
-                color.lineTo(x, baseline + 11 * std::sin(phase + 0.018 * x));
-            color.lineTo(hero.width(), hero.bottom());
-            color.closeSubpath();
             painter.save();
-            painter.setRenderHint(QPainter::Antialiasing);
-            painter.setClipPath(color);
+            if (m_effect == "fade") {
+                painter.setOpacity(std::clamp(m_fill + 0.045 * std::sin(phase), 0.0, 1.0));
+            } else {
+                QPainterPath color;
+                if (m_effect == "wipe") {
+                    color.addRect(QRectF(hero.left(), hero.top(), hero.width() * m_fill, hero.height()));
+                } else if (m_effect == "iris") {
+                    const auto radius = std::hypot(hero.width() / 2.0, hero.height() / 2.0) * m_fill;
+                    color.addEllipse(QPointF(hero.center()), radius, radius);
+                } else {
+                    const double baseline = hero.bottom() - hero.height() * m_fill;
+                    color.moveTo(0, hero.bottom());
+                    for (int x = 0; x <= hero.width(); x += 8)
+                        color.lineTo(x, baseline + 11 * std::sin(phase + 0.018 * x));
+                    color.lineTo(hero.width(), hero.bottom());
+                    color.closeSubpath();
+                }
+                painter.setRenderHint(QPainter::Antialiasing);
+                painter.setClipPath(color);
+            }
             drawArtwork(painter, hero, m_wallpaper);
             painter.restore();
         } else {
-            drawArtwork(painter, hero, m_movie.state() == QMovie::Running ? m_movie.currentPixmap() : m_wallpaper);
+            drawArtwork(painter, hero, m_playback->movie.currentPixmap().isNull() || m_playback->movie.fileName().isEmpty()
+                ? m_wallpaper : m_playback->movie.currentPixmap());
         }
         QLinearGradient shade(0, hero.bottom() - 98, 0, hero.bottom() + 1);
         shade.setColorAt(0, QColor(20, 20, 22, 0));
@@ -557,9 +749,11 @@ private:
     QPushButton* m_play;
     QProgressBar* m_progress;
     QPushButton* m_accounts;
-    QMovie m_movie;
+    WallpaperPlayback* m_playback = new WallpaperPlayback(this);
     QVariantAnimation m_wave;
-    int m_launchProgress = -1;
+    QVariantAnimation m_waveFill;
+    double m_fill = 0.07;
+    QString m_effect;
     QPixmap m_wallpaper;
     QPixmap m_monochrome;
 };
@@ -623,6 +817,22 @@ StellarGallery::StellarGallery(Actions actions, QWidget* parent)
     connect(m_saveSelection, &QTimer::timeout, this, [this] {
         APPLICATION->settings()->set("SelectedInstance", m_selected);
     });
+    auto* dragScroll = new QTimer(this);
+    dragScroll->setInterval(25);
+    connect(dragScroll, &QTimer::timeout, this, [this] {
+        const auto point = mapFromGlobal(QCursor::pos());
+        if (!rect().contains(point))
+            return;
+        int movement = 0;
+        if (point.x() < 34)
+            movement = -14;
+        else if (point.x() > width() - 34)
+            movement = 14;
+        auto* bar = m_scroll->horizontalScrollBar();
+        if (movement)
+            bar->setValue(bar->value() + movement);
+    });
+    m_dragScroll = dragScroll;
     m_launchTimer->setInterval(250);
     connect(m_launchTimer, &QTimer::timeout, this, &StellarGallery::updateLaunch);
 
@@ -641,13 +851,22 @@ StellarGallery::StellarGallery(Actions actions, QWidget* parent)
     }
 
     m_collections.append({QStringLiteral("animated"), tr("Animated GIFs"), {}, {}, {}});
-    m_homeAccounts = new GalleryButton(this);
-    m_homeAccounts->setObjectName("stellarArtButton");
-    m_homeAccounts->setAccessibleName(tr("Minecraft Accounts"));
-    m_homeAccounts->setToolTip(tr("Minecraft Accounts"));
-    m_homeAccounts->setIconSize(QSize(24, 24));
-    m_homeAccounts->setGeometry(width() - 55, 16, 39, 36);
+    m_homeAccounts = new AccountAvatar(this);
+    m_homeAccounts->move(width() - 52, 16);
     connect(m_homeAccounts, &QPushButton::clicked, this, &StellarGallery::showAccounts);
+    m_loaderFilter = new QComboBox(this);
+    m_loaderFilter->setAccessibleName(tr("Filter by mod loader"));
+    m_loaderFilter->setFixedWidth(126);
+    m_loaderFilter->move(16, 16);
+    m_loaderFilter->addItem(tr("All loaders"), QString());
+    m_loaderFilter->addItem(tr("Vanilla"), "Vanilla");
+    for (const auto* loader : {"Fabric", "Forge", "NeoForge", "Quilt", "LiteLoader"})
+        m_loaderFilter->addItem(QString::fromLatin1(loader), QString::fromLatin1(loader));
+    m_loaderFilter->setCurrentIndex(qMax(0, m_loaderFilter->findData(APPLICATION->settings()->get("StellarLoaderFilter"))));
+    connect(m_loaderFilter, &QComboBox::currentIndexChanged, this, [this] {
+        APPLICATION->settings()->set("StellarLoaderFilter", m_loaderFilter->currentData());
+        rebuild();
+    });
     auto* accounts = APPLICATION->accounts();
     connect(accounts, &AccountList::listChanged, this, &StellarGallery::updateAccountIcons);
     connect(accounts, &AccountList::defaultAccountChanged, this, &StellarGallery::updateAccountIcons);
@@ -674,6 +893,26 @@ void StellarGallery::rebuild()
         return QString::localeAwareCompare(left->name(), right->name()) < 0;
     });
 
+    const auto savedOrder = APPLICATION->settings()->get("StellarInstanceOrder").toStringList();
+    QHash<QString, qsizetype> order;
+    for (qsizetype i = 0; i < savedOrder.size(); ++i)
+        order.insert(savedOrder.at(i), i);
+    std::stable_sort(instances.begin(), instances.end(), [&order, &savedOrder](const auto* left, const auto* right) {
+        return order.value(left->id(), savedOrder.size()) < order.value(right->id(), savedOrder.size());
+    });
+    m_allIds.clear();
+    QHash<QString, InstanceVersion> versions;
+    for (const auto* instance : std::as_const(instances)) {
+        m_allIds.append(instance->id());
+        versions.insert(instance->id(), versionOf(instance));
+    }
+    const auto filter = m_loaderFilter->currentData().toString();
+    if (!filter.isEmpty()) {
+        instances.removeIf([&](const auto* instance) {
+            const auto loader = versions.value(instance->id()).loader;
+            return filter != (loader.isEmpty() ? QStringLiteral("Vanilla") : loader);
+        });
+    }
     const int oldOffset = m_scroll->horizontalScrollBar()->value();
     m_slide->stop();
     for (auto* tile : std::as_const(m_tiles)) {
@@ -690,11 +929,13 @@ void StellarGallery::rebuild()
         const auto* instance = i < instances.size() ? instances[i] : nullptr;
         const auto id = instance ? instance->id() : QString();
         const auto title = instance ? instance->name() : tr("Create New Instance");
-        auto version = instance ? versionOf(instance).minecraft : QString();
-        auto pixmap = instance ? artwork(id, version) : QPixmap();
+        auto version = versions.value(id).minecraft;
+        const auto path = instance ? artworkPath(id, version) : QString();
+        auto pixmap = instance ? m_thumbnails.value(path) : QPixmap();
         if (instance && version.isEmpty())
             version = tr("Minecraft");
         auto* tile = new GalleryTile(title, version, pixmap, m_cards);
+        tile->setProperty("wallpaperPath", path);
         tile->setFixedSize(width, windowHeight - gap * 2);
         m_row->addWidget(tile);
         m_tiles.append(tile);
@@ -709,12 +950,36 @@ void StellarGallery::rebuild()
                 playInstance(id);
             };
         }
-        tile->options = [this, i] { showActions(i); };
+        tile->instanceId = id;
+        tile->setAcceptDrops(true);
+        tile->dragging = [this](bool active) {
+            if (active) {
+                m_slide->stop();
+                m_dragScroll->start();
+            } else {
+                m_dragScroll->stop();
+            }
+        };
+        tile->reorder = [this, id](const QString& source, bool after) {
+            auto order = m_allIds;
+            if (source == id || !order.removeOne(source))
+                return;
+            const auto target = id.isEmpty() ? order.size() : order.indexOf(id) + (after ? 1 : 0);
+            order.insert(target, source);
+            APPLICATION->settings()->set("StellarInstanceOrder", order);
+            m_selected = source;
+            m_saveSelection->start();
+            rebuild();
+        };
+        tile->options = [this, i](const QPoint& screen) {
+            showActions(i, QRect(mapFromGlobal(screen), QSize(1, 1)));
+        };
         tile->installEventFilter(this);
     }
     m_cards->setFixedSize(gap + int(m_tiles.size()) * (width + gap), windowHeight);
     m_row->activate();
     m_scroll->horizontalScrollBar()->setValue(oldOffset);
+    scheduleThumbnails();
     const int selectedIndex = m_ids.indexOf(m_selected);
     selectIndex(selectedIndex >= 0 ? selectedIndex : 0, false);
     if (m_detail) {
@@ -814,6 +1079,7 @@ void StellarGallery::openInstance(const QString& id)
     }
     m_scroll->hide();
     m_homeAccounts->hide();
+    m_loaderFilter->hide();
     m_detail->show();
     m_detail->raise();
     refreshInstance();
@@ -829,6 +1095,7 @@ void StellarGallery::closeInstance()
         detail->deleteLater();
         m_scroll->show();
         m_homeAccounts->show();
+        m_loaderFilter->show();
     }
     setFocus();
 }
@@ -862,6 +1129,43 @@ void StellarGallery::playInstance(const QString& id)
         return;
     }
 
+    if (!m_preflight.isEmpty())
+        return;
+    m_preflight = id;
+    const QDir mods(QDir(instance->gameRoot()).filePath("mods"));
+    const auto versions = StellarClient::versions(instance);
+    QtConcurrent::run([mods, versions] { return StellarMods::incompatible(mods, versions); })
+        .then(this, [this, id](const QStringList& issues) {
+            m_preflight.clear();
+            if (issues.isEmpty()) {
+                launchChecked(id);
+                return;
+            }
+            auto* panel = makePanel(tr("Mod Compatibility"));
+            panel->setFixedWidth(545);
+            auto* layout = qobject_cast<QVBoxLayout*>(panel->layout());
+            auto* problems = new QListWidget(panel);
+            problems->setAccessibleName(tr("Incompatible mods"));
+            problems->setFixedHeight(124);
+            problems->addItems(issues);
+            for (int i = 0; i < problems->count(); ++i)
+                problems->item(i)->setToolTip(problems->item(i)->text());
+            layout->addWidget(problems);
+            auto* launch = new GalleryButton(tr("Launch Anyway"), panel);
+            layout->addWidget(launch, 0, Qt::AlignRight);
+            connect(launch, &QPushButton::clicked, panel, [this, id] {
+                dismissPanel();
+                launchChecked(id);
+            });
+            placePanel();
+        });
+}
+
+void StellarGallery::launchChecked(const QString& id)
+{
+    auto* instance = APPLICATION->instances()->getInstanceById(id);
+    if (!instance || !m_launching.isEmpty())
+        return;
     m_launching = id;
     m_javaStartup.invalidate();
     instance->setProperty("stellarLaunchState", "preparing");
@@ -874,12 +1178,15 @@ void StellarGallery::playInstance(const QString& id)
         finishLaunch();
         return;
     }
+    instance->installEventFilter(this);
     m_launchTimer->start();
 }
 
 void StellarGallery::finishLaunch()
 {
     m_launchTimer->stop();
+    if (auto* launching = APPLICATION->instances()->getInstanceById(m_launching))
+        launching->removeEventFilter(this);
     m_launching.clear();
     m_javaStartup.invalidate();
     if (m_detail) {
@@ -935,6 +1242,11 @@ void StellarGallery::keyPressEvent(QKeyEvent* event)
 
 bool StellarGallery::eventFilter(QObject* object, QEvent* event)
 {
+    if (event->type() == QEvent::DynamicPropertyChange && !m_launching.isEmpty()) {
+        const auto* change = static_cast<QDynamicPropertyChangeEvent*>(event);
+        if (change->propertyName() == "stellarLaunchState" && object->property("stellarLaunchState").toString() == "ready")
+            updateLaunch();
+    }
     if (event->type() == QEvent::Wheel) {
         auto* wheel = static_cast<QWheelEvent*>(event);
         const bool precise = !wheel->pixelDelta().isNull();
@@ -947,6 +1259,8 @@ bool StellarGallery::eventFilter(QObject* object, QEvent* event)
     }
     if (event->type() == QEvent::MouseButtonPress) {
         auto* mouse = static_cast<QMouseEvent*>(event);
+        if (m_panel && mouse->button() == Qt::LeftButton)
+            dismissPanel();
         const auto point = mapFromGlobal(mouse->globalPosition().toPoint());
         if (mouse->button() == Qt::LeftButton && point.y() < gap && window()->windowHandle()) {
             if (!window()->windowHandle()->startSystemMove()) {
@@ -984,30 +1298,7 @@ void StellarGallery::showEvent(QShowEvent* event)
     if (std::exchange(m_opened, true) || !motionEnabled() ||
         !APPLICATION->settings()->get("StellarOpeningAnimation").toBool())
         return;
-    auto* intro = new QWidget(this);
-    intro->setGeometry(rect());
-    intro->setAttribute(Qt::WA_TransparentForMouseEvents);
-    auto* logo = new QLabel(intro);
-    logo->setGeometry(rect());
-    logo->setAlignment(Qt::AlignCenter);
-    logo->setStyleSheet("background: #141416; border-radius: 16px;");
-    logo->setPixmap(APPLICATION->logo().pixmap(92, 92));
-    auto* sweep = new QProgressBar(intro);
-    sweep->setObjectName("stellarLaunchProgress");
-    sweep->setRange(0, 0);
-    sweep->setTextVisible(false);
-    sweep->setGeometry((width() - 74) / 2, height() / 2 + 61, 74, 2);
-    intro->show();
-    auto* opacity = new QGraphicsOpacityEffect(intro);
-    intro->setGraphicsEffect(opacity);
-    opacity->setOpacity(1.0);
-    auto* animation = new QPropertyAnimation(opacity, "opacity", intro);
-    animation->setDuration(260);
-    animation->setStartValue(1.0);
-    animation->setEndValue(0.0);
-    animation->setEasingCurve(QEasingCurve::OutQuart);
-    connect(animation, &QPropertyAnimation::finished, intro, &QObject::deleteLater);
-    animation->start();
+    new LibraryReveal(this);
 }
 
 QFrame* StellarGallery::makePanel(const QString& title)
@@ -1031,10 +1322,20 @@ QFrame* StellarGallery::makePanel(const QString& title)
     return m_panel;
 }
 
-void StellarGallery::placePanel()
+void StellarGallery::placePanel(const QRect& anchor, bool alignRight)
 {
     m_panel->adjustSize();
-    m_panel->move((width() - m_panel->width()) / 2, (height() - m_panel->height()) / 2);
+    const QSize size = m_panel->size();
+    QPoint position((width() - size.width()) / 2, (height() - size.height()) / 2);
+    if (anchor.isValid()) {
+        position.setX(alignRight ? anchor.right() + 1 - size.width() : anchor.left());
+        position.setY(anchor.bottom() + 7);
+        if (position.y() + size.height() > height() - 8)
+            position.setY(anchor.top() - 7 - size.height());
+    }
+    position.setX(qBound(8, position.x(), qMax(8, width() - size.width() - 8)));
+    position.setY(qBound(8, position.y(), qMax(8, height() - size.height() - 8)));
+    m_panel->move(position);
     m_panel->show();
     m_panel->raise();
     if (motionEnabled()) {
@@ -1061,7 +1362,7 @@ void StellarGallery::dismissPanel()
     }
 }
 
-void StellarGallery::showActions(int index)
+void StellarGallery::showActions(int index, QRect anchor)
 {
     selectIndex(index, false);
     const auto id = m_ids.value(index);
@@ -1106,14 +1407,23 @@ void StellarGallery::showActions(int index)
         add(tr("Change Wallpaper"), "screenshots", [this, id] { showWallpapers(id); });
     } else {
         add(tr("Create New Instance"), "new", [this] { showCreator(); });
-        add(tr("Import Instance"), "export", m_actions.importPack);
-        add(tr("Copy Existing Instance"), "copy", [this] { copyInstance(); });
+        add(tr("Import Instance"), "export", [this] { showImport(); });
         add(tr("Minecraft Accounts"), "accounts", [this] { showAccounts(); });
         add(tr("Wallpapers"), "screenshots", [this] { showWallpapers({}); });
     }
     add(tr("Settings"), "settings", [this] { showPreferences(); });
     panel->layout()->addItem(actions);
-    placePanel();
+    if (!anchor.isValid()) {
+        if (m_detail) {
+            anchor = QRect(width() - 95, height() - 57, 42, 36);
+        } else if (auto* tile = m_tiles.value(index)) {
+            const QRect card(tile->mapTo(this, QPoint()), tile->size());
+            const QRect visibleCard = card.intersected(rect());
+            if (visibleCard.isValid())
+                anchor = QRect(visibleCard.left() + 14, visibleCard.top() + 32, 1, 1);
+        }
+    }
+    placePanel(anchor, m_detail && anchor.width() > 1);
 }
 
 void StellarGallery::showContent(const QString& id)
@@ -1133,51 +1443,277 @@ void StellarGallery::showContent(const QString& id)
     add(tr("Mods"), "mods");
     add(tr("Resource Packs"), "resourcepacks");
     add(tr("Shaders"), "shaderpacks");
-    auto* look = new GalleryButton(tr("Install Stellar Look"), panel);
+    auto* look = new GalleryButton(tr("Enable Stellar title screen"), panel);
     panel->layout()->addWidget(look);
     connect(look, &QPushButton::clicked, panel, [this, id] {
         dismissPanel();
-        m_actions.installLook(id);
+        if (auto* instance = APPLICATION->instances()->getInstanceById(id)) {
+            if (instance->isRunning() || !StellarClient::hasSupportedTitle(StellarClient::versions(instance).value("net.minecraft"))) {
+                QMessageBox::information(this, tr("Stellar title screen"),
+                                         tr("With Minecraft closed, select a Java release from 1.21.9 through 26.3."));
+                return;
+            }
+            const auto result = StellarClient::prepareTitle(instance, true);
+            if (result)
+                QMessageBox::information(this, tr("Stellar title screen"), tr("The Stellar title screen will appear next time you play."));
+            else
+                QMessageBox::warning(this, tr("Stellar title screen"), result.error());
+        }
+    });
+    auto* client = new GalleryButton(tr("Install in-game tools"), panel);
+    panel->layout()->addWidget(client);
+    connect(client, &QPushButton::clicked, panel, [this, id] {
+        auto* instance = APPLICATION->instances()->getInstanceById(id);
+        if (!instance)
+            return;
+        const auto versions = StellarClient::versions(instance);
+        if (versions.value("net.minecraft") != "26.3" ||
+            QVersionNumber::fromString(versions.value("net.fabricmc.fabric-loader")) < QVersionNumber(0, 19, 5)) {
+            QMessageBox::information(this, tr("Stellar in-game tools"), tr("Use Minecraft Java 26.3 with Fabric Loader 0.19.5 or newer."));
+            return;
+        }
+        if (instance->isRunning()) {
+            QMessageBox::information(this, tr("Stellar in-game tools"), tr("Close Minecraft before installing the Stellar Client mod."));
+            return;
+        }
+        const auto installed = StellarClient::installTools(instance);
+        if (installed) {
+            dismissPanel();
+            QMessageBox::information(this, tr("Stellar in-game tools"), tr("Open Stellar on Minecraft’s title or pause menu."));
+        } else {
+            QMessageBox::warning(this, tr("Stellar in-game tools"), installed.error());
+        }
     });
     placePanel();
 }
 
-void StellarGallery::copyInstance()
+void StellarGallery::showImport()
 {
-    const auto source = QFileDialog::getExistingDirectory(window(), tr("Copy Existing Instance"));
-    if (source.isEmpty())
-        return;
-    const auto root = APPLICATION->instances()->primaryDir();
-    const auto id = QFileInfo(source).fileName();
-    const auto target = QDir(root).filePath(id);
-    QtConcurrent::run([source, root, target] {
+    auto* panel = makePanel(tr("Import Instance"));
+    panel->setFixedWidth(384);
+    auto* layout = qobject_cast<QVBoxLayout*>(panel->layout());
+    auto* profiles = new QListWidget(panel);
+    profiles->setAccessibleName(tr("Prism Launcher instances"));
+    profiles->setFixedHeight(139);
+    layout->addWidget(profiles);
+
+    QStringList locations;
+#ifdef Q_OS_WIN
+    if (const auto appData = qEnvironmentVariable("APPDATA"); !appData.isEmpty())
+        locations.append(QDir(appData).filePath("PrismLauncher/instances"));
+#endif
+    for (const auto& directory : QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation)) {
+        locations << QDir(directory).filePath("PrismLauncher/instances")
+                  << QDir(directory).filePath("prismlauncher/instances");
+    }
+    locations << QDir::home().filePath(".var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances");
+    QSet<QString> seen;
+    for (const auto& location : locations) {
+        const QDir root(location);
+        for (const auto& entry : root.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::IgnoreCase)) {
+            const auto path = entry.canonicalFilePath();
+            const QDir instance(path);
+            if (path.isEmpty() || seen.contains(path) || !instance.exists("instance.cfg") || !instance.exists("mmc-pack.json"))
+                continue;
+            seen.insert(path);
+            QString name = entry.fileName();
+            QFile settings(instance.filePath("instance.cfg"));
+            if (settings.open(QIODevice::ReadOnly)) {
+                const auto lines = settings.readAll().split('\n');
+                for (const auto& line : lines) {
+                    if (line.startsWith("name=")) {
+                        const auto label = QString::fromUtf8(line.sliced(5).trimmed());
+                        if (!label.isEmpty())
+                            name = label;
+                        break;
+                    }
+                }
+            }
+            auto* item = new QListWidgetItem(name, profiles);
+            item->setData(Qt::UserRole, path);
+            item->setToolTip(path);
+        }
+    }
+    auto* note = new QLabel(profiles->count() ? tr("Close Minecraft before copying an instance.")
+                                              : tr("No Prism instances found. Browse for an instance folder or archive."), panel);
+    note->setWordWrap(true);
+    layout->addWidget(note);
+    auto* row = new QHBoxLayout;
+    auto* browse = new GalleryButton(tr("Folder…"), panel);
+    auto* archive = new GalleryButton(tr("Archive…"), panel);
+    auto* copy = new GalleryButton(tr("Preview Import"), panel);
+    copy->setProperty("stellarPrimary", true);
+    copy->setEnabled(profiles->count() > 0);
+    profiles->setVisible(profiles->count() > 0);
+    profiles->setCurrentRow(0);
+    row->addWidget(browse);
+    row->addWidget(archive);
+    row->addStretch();
+    row->addWidget(copy);
+    layout->addLayout(row);
+    connect(browse, &QPushButton::clicked, panel, [this] {
+        const auto source = QFileDialog::getExistingDirectory(window(), tr("Choose a Prism or MultiMC instance folder"));
+        if (!source.isEmpty()) {
+            dismissPanel();
+            previewImport(source);
+        }
+    });
+    connect(archive, &QPushButton::clicked, panel, [this] {
+        const auto file = QFileDialog::getOpenFileName(window(), tr("Choose an instance or modpack archive"), {},
+            tr("Minecraft packs (*.zip *.mrpack)"));
+        if (!file.isEmpty())
+            previewImport(file);
+    });
+    connect(copy, &QPushButton::clicked, panel, [this, profiles] {
+        if (const auto* item = profiles->currentItem()) {
+            const auto source = item->data(Qt::UserRole).toString();
+            dismissPanel();
+            previewImport(source);
+        }
+    });
+    placePanel();
+}
+
+void StellarGallery::previewImport(const QString& source)
+{
+    const bool archive = QFileInfo(source).isFile();
+    auto* panel = makePanel(tr("Review Instance Import"));
+    panel->setFixedWidth(560);
+    auto* layout = qobject_cast<QVBoxLayout*>(panel->layout());
+    auto* summary = new QLabel(tr("Reading instance files…"), panel);
+    summary->setWordWrap(true);
+    auto* paths = new QListWidget(panel);
+    paths->setAccessibleName(tr("Files and folders to copy"));
+    paths->setFixedHeight(178);
+    paths->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    auto* copy = new GalleryButton(archive ? tr("Continue Import") : tr("Copy Instance"), panel);
+    copy->setProperty("stellarPrimary", true);
+    copy->setEnabled(false);
+    layout->addWidget(summary);
+    layout->addWidget(paths);
+    layout->addWidget(copy, 0, Qt::AlignRight);
+    placePanel();
+
+    struct Manifest {
+        QStringList paths;
+        qint64 bytes = 0;
+        qsizetype files = 0;
+    };
+    QtConcurrent::run([source, archive]() -> Result<Manifest> {
+        if (archive) {
+            MMCZip::ArchiveReader pack(source);
+            TRY(pack.collectFiles(false))
+            Manifest manifest;
+            manifest.paths = pack.getFiles();
+            if (pack.exists("modrinth.index.json")) {
+                TRY_INTO(const auto index, pack.readFile("modrinth.index.json"))
+                const auto files = QJsonDocument::fromJson(index).object().value("files").toArray();
+                for (const auto& entry : files) {
+                    const auto file = entry.toObject();
+                    const auto env = file.value("env").toObject();
+                    const auto client = env.isEmpty() ? QStringLiteral("required")
+                                                      : env.value("client").toString("unsupported");
+                    const auto path = file.value("path").toString();
+                    if (path.isEmpty() || client == "unsupported")
+                        continue;
+                    manifest.paths.append(client == "optional" ? tr("Optional download — %1").arg(path)
+                                                                : tr("Download — %1").arg(path));
+                }
+            }
+            return manifest;
+        }
         const QDir folder(source);
         if (!folder.exists("instance.cfg") || !folder.exists("mmc-pack.json"))
-            return tr("Choose a Minecraft instance folder containing instance.cfg and mmc-pack.json.");
-        if (QFileInfo::exists(target))
-            return tr("An instance with that folder name already exists.");
+            return std::unexpected(tr("Choose a Prism or MultiMC instance folder containing instance.cfg and mmc-pack.json."));
+        Manifest manifest;
         using Flags = QDirListing::IteratorFlag;
         for (const auto& entry : QDirListing(source, Flags::Recursive | Flags::IncludeHidden)) {
-            if (entry.isSymLink())
-                return tr("This instance contains links to files. Export it as an archive before importing it.");
+            if (entry.isSymLink() || (!entry.isDir() && !entry.isFile()))
+                return std::unexpected(tr("This instance contains links or special files. Export an archive and try again."));
+            auto path = folder.relativeFilePath(entry.absoluteFilePath());
+            if (entry.isDir()) {
+                path += '/';
+            } else {
+                manifest.bytes += entry.size();
+                ++manifest.files;
+            }
+            manifest.paths.append(path);
         }
-        if (!QDir().mkpath(root))
-            return tr("Couldn’t open the Stellar instance library.");
+        std::sort(manifest.paths.begin(), manifest.paths.end());
+        return manifest;
+    }).then(this, [this, guarded = QPointer(panel), paths, summary, copy, source, archive](const Result<Manifest>& manifest) {
+        if (!guarded || m_panel != guarded)
+            return;
+        if (!manifest) {
+            summary->setText(manifest.error());
+            return;
+        }
+        summary->setText(archive ? tr("Archive contents and any listed Modrinth downloads. The pack installer selects what applies.")
+            : tr("%1 files · %2 · Includes the saves, mods and settings listed below.")
+                .arg(QLocale().toString(manifest->files), QLocale().formattedDataSize(manifest->bytes)));
+        paths->addItems(manifest->paths);
+        copy->setEnabled(true);
+        connect(copy, &QPushButton::clicked, guarded, [this, source, archive, entries = manifest->paths] {
+            dismissPanel();
+            if (archive)
+                m_actions.importPack(source);
+            else
+                copyInstance(source, entries);
+        });
+    });
+}
+
+void StellarGallery::copyInstance(const QString& source, const QStringList& entries)
+{
+    const auto root = APPLICATION->instances()->primaryDir();
+#ifdef Q_OS_MACOS
+    QList<QDir> referenceMods;
+    auto* instances = APPLICATION->instances();
+    for (int i = 0; i < instances->count(); ++i)
+        referenceMods.append(QDir(QDir(instances->at(i)->gameRoot()).filePath("mods")));
+#endif
+    QtConcurrent::run([source, root, entries
+#ifdef Q_OS_MACOS
+        , referenceMods
+#endif
+        ]() -> Result<QString> {
+        if (root.isEmpty() || !QDir().mkpath(root))
+            return std::unexpected(tr("Couldn’t open the Stellar instance library."));
+        const auto id = FS::DirNameFromString(QFileInfo(source).fileName(), {root});
+        if (id.isEmpty())
+            return std::unexpected(tr("Couldn’t find a free folder name for the copy."));
         QTemporaryDir staging(QDir(root).filePath(".stellar-copy-XXXXXX"));
-        if (!staging.isValid())
-            return tr("Couldn’t prepare the new instance.");
-        const auto payload = QDir(staging.path()).filePath("instance");
-        if (!FS::copy(source, payload).copyDirectories(true).followSymlinks(false)() ||
-            !QDir().rename(payload, target))
-            return tr("Couldn’t copy the instance into the Stellar library.");
-        return QString();
-    }).then(this, [this, id](const QString& error) {
-        if (!error.isEmpty()) {
-            QMessageBox::warning(window(), tr("Couldn’t copy instance"), error);
+        const QDir payload(QDir(staging.path()).filePath("instance"));
+        if (!staging.isValid() || !QDir().mkpath(payload.absolutePath()))
+            return std::unexpected(tr("Couldn’t prepare the new instance."));
+        const auto sourcePrefix = QDir(source).canonicalPath() + '/';
+        for (const auto& relative : entries) {
+            const auto from = QDir(source).filePath(relative);
+            const auto to = payload.filePath(relative);
+            const QFileInfo file(QDir::cleanPath(from));
+            if (file.isSymLink() || !file.canonicalFilePath().startsWith(sourcePrefix) ||
+                (relative.endsWith('/') ? !file.isDir() || !QDir().mkpath(to) :
+                    !file.isFile() || !QDir().mkpath(QFileInfo(to).absolutePath()) || !QFile::copy(from, to)))
+                return std::unexpected(tr("The instance changed or could not be read. Review it again before copying."));
+        }
+#ifdef Q_OS_MACOS
+        QList<QDir> importedMods;
+        for (const auto& relative : {QStringLiteral("minecraft/mods"), QStringLiteral(".minecraft/mods")}) {
+            if (payload.exists(relative))
+                importedMods.append(QDir(payload.filePath(relative)));
+        }
+        StellarMods::shareCopies(referenceMods, importedMods);
+#endif
+        if (!QDir().rename(payload.absolutePath(), QDir(root).filePath(id)))
+            return std::unexpected(tr("Couldn’t move the copied instance into the Stellar library."));
+        return id;
+    }).then(this, [this](const Result<QString>& copied) {
+        if (!copied) {
+            QMessageBox::warning(window(), tr("Couldn’t import instance"), copied.error());
             return;
         }
         APPLICATION->instances()->loadList();
-        selectInstance(id);
+        selectInstance(*copied);
     });
 }
 
@@ -1209,11 +1745,22 @@ void StellarGallery::showCreator()
     };
     field(tr("Minecraft"), version);
     field(tr("Loader"), loader);
+    auto* compatible = new QCheckBox(tr("Add compatible performance mods"), panel);
+    compatible->setToolTip(tr("Stellar selects matching stable builds of Sodium, Lithium and FerriteCore for this Fabric instance."));
+    compatible->setChecked(true);
+    compatible->hide();
+    layout->addWidget(compatible);
+    connect(loader, &QComboBox::currentIndexChanged, panel, [compatible, panel](int index) {
+        compatible->setVisible(index == 1);
+        panel->adjustSize();
+    });
     auto* controls = new QHBoxLayout;
+    auto* import = new GalleryButton(tr("Import…"), panel);
     auto* advanced = new GalleryButton(tr("More Options…"), panel);
     auto* submit = new GalleryButton(tr("Create"), panel);
     submit->setProperty("stellarPrimary", true);
     submit->setEnabled(false);
+    controls->addWidget(import);
     controls->addWidget(advanced);
     controls->addStretch();
     controls->addWidget(submit);
@@ -1229,9 +1776,10 @@ void StellarGallery::showCreator()
     };
     connect(version, &QComboBox::currentIndexChanged, panel, validate);
     connect(loader, &QComboBox::currentIndexChanged, panel, validate);
+    connect(import, &QPushButton::clicked, panel, [this] { showImport(); });
     connect(advanced, &QPushButton::clicked, panel, [this] { dismissPanel(); m_actions.create(); });
     connect(name, &QLineEdit::returnPressed, submit, &QPushButton::click);
-    connect(submit, &QPushButton::clicked, panel, [this, name, version, loader, java, fabric, fabricId] {
+    connect(submit, &QPushButton::clicked, panel, [this, name, version, loader, java, fabric, fabricId, compatible] {
         auto game = java->getVersion(version->currentData().toString());
         if (!game)
             return;
@@ -1240,6 +1788,7 @@ void StellarGallery::showCreator()
         auto title = name->text().trimmed();
         if (title.isEmpty())
             title = tr("Minecraft %1").arg(game->descriptor());
+        creation->setPerformanceMods(loader->currentIndex() == 1 && compatible->isChecked());
         creation->setName(title);
         creation->setOriginalName(title, game->descriptor());
         creation->setIcon("default");
@@ -1287,8 +1836,15 @@ void StellarGallery::updateAccountIcons()
 
 void StellarGallery::showAccounts()
 {
+    if (m_panel && m_panel->property("accountsDropdown").toBool()) {
+        dismissPanel();
+        return;
+    }
+    const QRect anchor = m_detail ? static_cast<InstanceDetail*>(m_detail)->accountAnchor(this)
+                                  : m_homeAccounts->geometry();
     auto* panel = makePanel(tr("Minecraft Accounts"));
-    panel->setFixedWidth(310);
+    panel->setProperty("accountsDropdown", true);
+    panel->setFixedWidth(248);
     auto* layout = qobject_cast<QVBoxLayout*>(panel->layout());
     const auto add = [this, panel, layout](const QIcon& icon, const QString& label, const std::function<void()>& action) {
         auto* button = new GalleryButton(icon, label, panel);
@@ -1324,12 +1880,12 @@ void StellarGallery::showAccounts()
     add({}, tr("Manage accounts"), m_actions.accounts);
     add({}, tr("Change skin"), m_actions.skins);
     add({}, tr("General settings"), [this] { showPreferences(); });
-    placePanel();
+    placePanel(anchor, true);
 }
 
 void StellarGallery::showPreferences()
 {
-    auto* panel = makePanel(tr("Settings"));
+    auto* panel = makePanel(tr("General settings"));
     panel->setFixedWidth(352);
     auto* layout = qobject_cast<QVBoxLayout*>(panel->layout());
     auto* row = new QHBoxLayout;
@@ -1338,6 +1894,9 @@ void StellarGallery::showPreferences()
     animation->setAccessibleName(tr("Launch indicator"));
     animation->addItem(tr("Subtle progress bar"), "progress");
     animation->addItem(tr("Wallpaper wave"), "wave");
+    animation->addItem(tr("Wallpaper fade"), "fade");
+    animation->addItem(tr("Horizontal wipe"), "wipe");
+    animation->addItem(tr("Iris reveal"), "iris");
     animation->addItem(tr("Status only"), "off");
     animation->setCurrentIndex(std::max(0, animation->findData(APPLICATION->settings()->get("StellarLaunchAnimation"))));
     connect(animation, &QComboBox::currentIndexChanged, panel, [animation] {
@@ -1353,7 +1912,35 @@ void StellarGallery::showPreferences()
     };
     option(tr("Fill screen when Minecraft opens"), "StellarFillScreen");
     option(tr("Animate app opening"), "StellarOpeningAnimation");
+    option(tr("Use Stellar title on first Minecraft launch"), "StellarTitleScreen");
     option(tr("Enable motion effects"), "StellarMotion");
+    option(tr("Update matching mods when switching versions"), "StellarAutoMatchMods");
+#ifdef Q_OS_MACOS
+    auto* compact = new GalleryButton(tr("Deduplicate identical mods"), panel);
+    layout->addWidget(compact);
+    connect(compact, &QPushButton::clicked, panel, [this, compact] {
+        QList<QDir> allMods;
+        QList<QDir> inactiveMods;
+        auto* instances = APPLICATION->instances();
+        for (int i = 0; i < instances->count(); ++i) {
+            const auto* instance = instances->at(i);
+            const QDir mods(QDir(instance->gameRoot()).filePath("mods"));
+            allMods.append(mods);
+            if (!instance->isRunning() && instance->id() != m_launching)
+                inactiveMods.append(mods);
+        }
+        compact->setEnabled(false);
+        compact->setText(tr("Looking for matching mods…"));
+        QtConcurrent::run([allMods, inactiveMods] { return StellarMods::shareCopies(allMods, inactiveMods); })
+            .then(this, [guarded = QPointer(compact)](qsizetype count) {
+                if (!guarded)
+                    return;
+                guarded->setText(count ? tr("Deduplicated %n mod file(s)", nullptr, int(count))
+                                       : tr("No matching mod files to deduplicate"));
+                guarded->setEnabled(true);
+            });
+    });
+#endif
     auto* microsoft = new GalleryButton(tr("Microsoft application ID…"), panel);
     layout->addWidget(microsoft);
     connect(microsoft, &QPushButton::clicked, panel, [this] {
@@ -1407,9 +1994,47 @@ QString StellarGallery::artworkPath(const QString& instance, const QString& vers
     return file;
 }
 
-QPixmap StellarGallery::artwork(const QString& instance, const QString& version)
+void StellarGallery::scheduleThumbnails()
 {
-    return wallpaperPixmap(artworkPath(instance, version));
+    QStringList paths;
+    for (auto* tile : std::as_const(m_tiles)) {
+        const auto path = tile->property("wallpaperPath").toString();
+        if (!path.isEmpty() && !m_thumbnails.contains(path) && !m_pendingThumbnails.contains(path)) {
+            m_pendingThumbnails.insert(path);
+            paths.append(path);
+        }
+    }
+    if (paths.isEmpty())
+        return;
+
+    QtConcurrent::run([paths] {
+        QList<QPair<QString, QImage>> decoded;
+        decoded.reserve(paths.size());
+        for (const auto& path : paths) {
+            QImageReader reader(path);
+            const auto size = reader.size();
+            if (size.isValid())
+                reader.setScaledSize(size.scaled(650, 650, Qt::KeepAspectRatio));
+            auto image = reader.read();
+            if (image.isNull()) {
+                QImageReader fallback(":/stellar-gallery/fallback.jpg");
+                fallback.setScaledSize(QSize(650, 365));
+                image = fallback.read();
+            }
+            decoded.append({path, std::move(image)});
+        }
+        return decoded;
+    }).then(this, [this](const QList<QPair<QString, QImage>>& decoded) {
+        for (const auto& [path, image] : decoded) {
+            m_pendingThumbnails.remove(path);
+            m_thumbnails.insert(path, QPixmap::fromImage(image));
+        }
+        for (auto* tile : std::as_const(m_tiles)) {
+            const auto path = tile->property("wallpaperPath").toString();
+            if (m_thumbnails.contains(path))
+                static_cast<GalleryTile*>(tile)->setArtwork(m_thumbnails.value(path));
+        }
+    });
 }
 
 QPixmap StellarGallery::wallpaperPixmap(const QString& file)
@@ -1476,9 +2101,14 @@ void StellarGallery::fetchArtwork(const Collection& collection)
 void StellarGallery::updateArtwork()
 {
     for (int i = 0; i < m_ids.size(); ++i) {
-        if (auto* instance = APPLICATION->instances()->getInstanceById(m_ids[i]))
-            static_cast<GalleryTile*>(m_tiles[i])->setArtwork(artwork(m_ids[i], versionOf(instance).minecraft));
+        if (auto* instance = APPLICATION->instances()->getInstanceById(m_ids[i])) {
+            const auto path = artworkPath(m_ids[i], versionOf(instance).minecraft);
+            m_tiles[i]->setProperty("wallpaperPath", path);
+            if (m_thumbnails.contains(path))
+                static_cast<GalleryTile*>(m_tiles[i])->setArtwork(m_thumbnails.value(path));
+        }
     }
+    scheduleThumbnails();
     if (m_detail)
         refreshInstance();
 }
@@ -1486,19 +2116,50 @@ void StellarGallery::updateArtwork()
 void StellarGallery::showWallpapers(const QString& instance)
 {
     auto* panel = makePanel(tr("Wallpapers"));
-    panel->setFixedWidth(380);
+    panel->setFixedWidth(598);
     auto* layout = qobject_cast<QVBoxLayout*>(panel->layout());
     auto* collections = new QComboBox(panel);
     collections->setAccessibleName(tr("Wallpaper collection"));
     for (const auto& item : m_collections)
         collections->addItem(item.title);
     auto* files = new QListWidget(panel);
-    files->setFixedHeight(168);
+    files->setFixedHeight(176);
     files->setAccessibleName(tr("Available wallpapers"));
     auto* apply = new GalleryButton(tr("Use Wallpaper"), panel);
     apply->setProperty("stellarPrimary", true);
     layout->addWidget(collections);
-    layout->addWidget(files);
+    auto* body = new QHBoxLayout;
+    body->addWidget(files, 1);
+    auto* preview = new QLabel(panel);
+    preview->setAccessibleName(tr("Wallpaper preview"));
+    preview->setAlignment(Qt::AlignCenter);
+    preview->setFixedSize(308, 176);
+    preview->setStyleSheet("background: #141416; border: 1px solid #37363d; border-radius: 9px;");
+    auto* playback = new WallpaperPlayback(preview);
+    connect(&playback->movie, &QMovie::frameChanged, preview, [preview, playback] {
+        preview->setPixmap(playback->movie.currentPixmap());
+    });
+    body->addWidget(preview);
+    layout->addLayout(body);
+    connect(files, &QListWidget::currentItemChanged, panel, [preview, playback](const QListWidgetItem* item) {
+        playback->setFile({}, {});
+        preview->setText(QObject::tr("No preview available"));
+        if (!item)
+            return;
+        const auto path = item->data(Qt::UserRole).toString();
+        QImageReader reader(path);
+        reader.setAutoTransform(true);
+        const auto bounds = preview->size() - QSize(6, 6);
+        if (const auto size = reader.size(); size.isValid()) {
+            reader.setScaledSize(size.boundedTo(size.scaled(bounds, Qt::KeepAspectRatio)));
+            const auto image = reader.read();
+            if (!image.isNull())
+                preview->setPixmap(QPixmap::fromImage(image));
+        }
+        if (motionEnabled())
+            playback->setFile(path, bounds);
+    });
+    preview->setText(tr("No wallpaper selected"));
     auto* shuffle = new QCheckBox(tr("Shuffle this collection when opening the instance"), panel);
     const auto activeShuffle = APPLICATION->settings()->get("StellarWallpaperShuffle").toMap().value(instance).toString();
     shuffle->setVisible(!instance.isEmpty());
@@ -1632,6 +2293,8 @@ void StellarGallery::showWallpapers(const QString& instance)
             break;
         }
     }
+    if (instance.isEmpty())
+        collections->setCurrentIndex(m_collections.size() - 1);
     shuffle->setChecked(!activeShuffle.isEmpty());
     populate();
     for (int i = 0; i < files->count(); ++i) {
@@ -1654,7 +2317,7 @@ void StellarGallery::updateLaunch()
     const auto state = pending->property("stellarLaunchState").toString();
     if (state == "java" && !m_javaStartup.isValid())
         m_javaStartup.start();
-    if (state == "ready" || (m_javaStartup.isValid() && m_javaStartup.hasExpired(20000))) {
+    if (state == "ready") {
         finishLaunch();
         return;
     }
@@ -1671,6 +2334,10 @@ void StellarGallery::updateLaunch()
         const int progress = qBound(0, qRound(state.sliced(9).toDouble() * 100), 100);
         detail->setLaunchState(tr("Downloading…"), true, animate, showProgress && progress > 0 ? progress : -1);
     } else {
-        detail->setLaunchState(state == "java" ? tr("Starting Minecraft…") : tr("Preparing…"), true, animate);
+        const bool java = state == "java";
+        const bool slow = java && m_javaStartup.hasExpired(90000);
+        const bool cover = wallpaperEffect(APPLICATION->settings()->get("StellarLaunchAnimation").toString());
+        detail->setLaunchState(slow ? tr("Minecraft is still starting…") : java ? tr("Starting Minecraft…") : tr("Preparing…"),
+                               true, animate && !slow, java && cover && !slow ? 96 : -1);
     }
 }

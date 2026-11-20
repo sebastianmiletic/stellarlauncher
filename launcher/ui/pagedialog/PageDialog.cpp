@@ -27,6 +27,8 @@
 
 PageDialog::PageDialog(BasePageProvider* pageProvider, QString defaultId, QWidget* parent) : QDialog(parent)
 {
+    if (defaultId == "accounts")
+        setWindowFlag(Qt::FramelessWindowHint);
     setWindowTitle(pageProvider->dialogTitle());
     m_container = new PageContainer(pageProvider, std::move(defaultId), this);
 
