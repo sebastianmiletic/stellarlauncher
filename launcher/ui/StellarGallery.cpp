@@ -931,7 +931,7 @@ void StellarGallery::rebuild()
     m_tiles.clear();
     m_ids.clear();
 
-    const int columns = std::clamp(int(instances.size()), 1, 4);
+    const int columns = std::clamp(int(instances.size()), 1, 3);
     const int cardSpace = windowWidth - gap * (columns + 1);
     const auto cardWidth = [columns, cardSpace](int index) {
         return cardSpace / columns + (index % columns < cardSpace % columns ? 1 : 0);
