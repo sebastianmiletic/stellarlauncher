@@ -18,11 +18,11 @@ Stellar Launcher is a compact Minecraft Java launcher built on Prism Launcher’
 | System | Package |
 | --- | --- |
 | macOS on Apple silicon | Download the ARM64 ZIP from Releases, extract it, and move **Stellar Launcher.app** into **Applications**. This build uses an ad-hoc signature. |
-| macOS on Intel | The GitHub workflow builds an Intel ZIP. Extract it and move the app into **Applications**. |
-| Windows | The workflow builds portable ZIPs for x86-64 and ARM64. Extract the entire ZIP before launching the included executable. |
-| Linux | The workflow builds AppImages for x86-64 and ARM64. Make the matching file executable with `chmod +x` and open it. The Linux builds use Ubuntu 24.04 runners, so compatibility with older distributions varies. |
+| macOS on Intel | Download the Intel x86-64 ZIP. Extract it and move the app into **Applications**. |
+| Windows | Download the portable ZIP that matches your system (x86-64 or ARM64). Extract the entire ZIP before launching the included executable. |
+| Linux | Download the AppImage that matches your system (x86-64 or ARM64). Make the matching file executable with `chmod +x` and open it. The Linux builds use Ubuntu 24.04 runners, so compatibility with older distributions varies. |
 
-[Releases](https://github.com/sebastianmiletic/stellarlauncher/releases) lists published downloads. [Stellar downloads](https://github.com/sebastianmiletic/stellarlauncher/actions/workflows/stellar-downloads.yml) lists build jobs and workflow artifacts. The repository is private.
+[Releases](https://github.com/sebastianmiletic/stellarlauncher/releases) lists published downloads. [Stellar downloads](https://github.com/sebastianmiletic/stellarlauncher/actions/workflows/stellar-downloads.yml) lists build jobs and workflow artifacts. GitHub access to the private repository is required.
 
 ## Set up Microsoft sign-in
 
@@ -50,6 +50,10 @@ Stellar matches installed Java releases to official artwork where Minecraft publ
 | Instance options | New instance | Settings |
 | --- | --- | --- |
 | ![Icon-only instance options](tools/stellar-prism/screenshots/instance-options.png) | ![New Instance panel with game version and loader choices](tools/stellar-prism/screenshots/new-instance.png) | ![Animation and fullscreen settings](tools/stellar-prism/screenshots/settings.png) |
+
+| Accounts | Animated wallpapers |
+| --- | --- |
+| ![The account picker with Steve’s head and General settings](tools/stellar-prism/screenshots/accounts.png) | ![The animated wallpaper collection and shuffle setting](tools/stellar-prism/screenshots/wallpapers.png) |
 
 The separate [Prism appearance release](https://github.com/sebastianmiletic/stellarlauncher/releases/tag/stellar-theme-v1.0.0) contains the portable theme for Prism’s management window.
 
