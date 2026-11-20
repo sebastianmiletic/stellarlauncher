@@ -63,7 +63,7 @@ Stellar matches installed Java releases to the highest-resolution official artwo
 
 | Instance options | Instance editor |
 | --- | --- |
-| ![The Creative tile’s Play, Edit, and folder menu](tools/stellar-prism/screenshots/instance-options.png) | ![The editor’s Version page with the loader selector and page navigation](tools/stellar-prism/screenshots/editor.png) |
+| ![The Creative tile’s Play, Edit, and folder menu](tools/stellar-prism/screenshots/instance-options.png) | ![The editor’s Mods page with the loader selector and page navigation](tools/stellar-prism/screenshots/editor.png) |
 
 | Accounts & Settings | General settings |
 | --- | --- |
