@@ -35,7 +35,7 @@ The approval requirement applies to both browser and QR/device-code sign-in. Bro
 
 ## In-game tools
 
-For a **Minecraft Java 26.3** instance with **Fabric Loader 0.19.5 or later**, open **Edit → Replays → Install Flashback**. The **Stellar** button appears on Minecraft's title and pause menus.
+For a **Minecraft Java 26.3** instance with **Fabric Loader 0.19.5 or later**, the **Stellar** button appears on Minecraft's title and pause menus.
 
 - **Mods** searches Modrinth for Fabric projects matching the current Minecraft version. It also enables and disables installed mod files. Changes take effect after restarting Minecraft.
 - **Shaders** browses Modrinth shader packs and opens the live shader picker when a compatible version of Iris is installed. Search results open their Modrinth project pages.
@@ -51,9 +51,7 @@ Open **Edit → Replays** for a Fabric Minecraft Java 26.3 instance. Use **Insta
 
 The gallery and Minecraft launch engine run in one Qt application. Stellar uses its own library under `~/Library/Application Support/Stellar Launcher`.
 
-![The instance details view with wallpaper, Play, game version, loader and playtime](tools/stellar-prism/screenshots/instance-details.png)
-
-The gallery shows up to three instances across, with each card taking the full width when only one instance is visible. Scroll past the last wallpaper card to **Create New Instance**, or press Command-N. The quick creator offers Vanilla and Fabric. With Fabric, it can add compatible stable releases of Sodium, Lithium, and FerriteCore for the selected game version. **More Options** opens snapshots, other loaders, and modpacks. Choose **Import…** on the create tile to pick an installed Prism instance, browse for a Prism/MultiMC folder, or open a modpack archive. Review the exact file list and total size before copying a Prism or MultiMC folder. Archive previews show entries and any Modrinth downloads listed in the pack. Open the **Accounts & Settings** card after Create New Instance to add or switch Microsoft accounts and open settings. Online sign-in requires a Minecraft-approved Stellar application ID as described above. **Change Skin** opens the in-app editor for the signed-in Microsoft account.
+The gallery shows up to three instances across, with each card taking the full width when only one instance is visible. Scroll past the last wallpaper card to **Create New Instance**, or press Command-N. The quick creator offers Vanilla and Fabric. With Fabric, it can add compatible stable releases of Sodium, Lithium, and FerriteCore for the selected game version. **More Options** opens snapshots, other loaders, and modpacks. Choose **Import…** on the create tile to pick an installed Prism instance, browse for a Prism/MultiMC folder, or open a modpack archive. Review the exact file list and total size before copying a Prism or MultiMC folder. Archive previews show entries and any Modrinth downloads listed in the pack. Open the **Accounts & Settings** card after Create New Instance to add or switch Microsoft accounts and open settings. Online sign-in requires a Minecraft-approved Stellar application ID as described above. The card shows the active skin and username alongside local playtime and the total instance count. Use **Change Skin → Get by Username** to import a public Minecraft Java skin, or import a local PNG. The preview rotates to show skins from the front and capes from the back. Applying changes requires a signed-in Minecraft account.
 
 **General settings** in the account menu (Command-comma on macOS) controls motion, Minecraft fullscreen, and the launch indicator. Choose **Wallpaper wave**, **Wallpaper fade**, **Horizontal wipe**, **Iris reveal**, **Subtle progress bar**, or **Status only**.
 
@@ -61,15 +59,19 @@ Drag cards into your preferred order. Use **General Settings** to filter the lib
 
 Click a wallpaper card once to open details, or double-click to launch directly. Right-click an instance and choose **Edit**. Open **Mods**, **Resource Packs** (called **Texture Packs** in older versions), or **Shaders**. Use **Browse** or **Add File** to install content. Select an item to enable, disable, or remove it. Update, version, and folder actions are under **More**. The editor header has wallpaper and loader controls. General Settings opens in a matching window with separate launcher accent, Minecraft title, and black hole disk colors. Each instance can launch independently. The running instance’s Play control becomes **Running · Stop…**. Use the arrow keys to select an instance or the create tile, Return to open it or play from instance details, Shift-F10 for options, and Escape to dismiss the panel.
 
-Stellar matches installed Java releases to official artwork where Minecraft publishes a matching collection. Open **Change Wallpaper** from an instance and select **Animated GIFs** to import local GIFs (up to 64 MB and 4096 pixels per side). The chooser previews still images and GIFs. Animated wallpapers pause when Stellar is hidden, minimized or in the background. Turn on **Shuffle this collection** to choose a wallpaper each time you open an instance. The library uses still previews, and disabling motion also pauses GIF playback when opening details.
+Stellar matches installed Java releases to the highest-resolution official artwork available for that release. Wallpapers render at the screen’s pixel density, up to the original image resolution. Open **Change Wallpaper** from an instance and select **Animated GIFs** to import local GIFs (up to 64 MB and 4096 pixels per side). The chooser previews still images and GIFs. Animated wallpapers pause when Stellar is hidden, minimized or in the background. Turn on **Shuffle this collection** to choose a wallpaper each time you open an instance. The library uses still previews, and disabling motion also pauses GIF playback when opening details.
 
-| Instance options | New instance | Settings |
-| --- | --- | --- |
-| ![Icon-only instance options](tools/stellar-prism/screenshots/instance-options.png) | ![New Instance panel with game version and loader choices](tools/stellar-prism/screenshots/new-instance.png) | ![Animation and fullscreen settings](tools/stellar-prism/screenshots/settings.png) |
-
-| Accounts | Animated wallpapers |
+| Instance options | Instance editor |
 | --- | --- |
-| ![The account picker with Steve’s head and General settings](tools/stellar-prism/screenshots/accounts.png) | ![The animated wallpaper collection and shuffle setting](tools/stellar-prism/screenshots/wallpapers.png) |
+| ![The Creative tile’s Play, Edit, and folder menu](tools/stellar-prism/screenshots/instance-options.png) | ![The editor’s Version page with the loader selector and page navigation](tools/stellar-prism/screenshots/editor.png) |
+
+| Accounts & Settings | General settings |
+| --- | --- |
+| ![The account tile with Steve and local launcher statistics](tools/stellar-prism/screenshots/accounts.png) | ![General settings with motion, fullscreen, and colour controls](tools/stellar-prism/screenshots/settings.png) |
+
+| Flashback replays | Skin library |
+| --- | --- |
+| ![The editor’s replay list with Flashback installation and replay controls](tools/stellar-prism/screenshots/replays.png) | ![The 3D skin preview with a skin imported by username](tools/stellar-prism/screenshots/skins.png) |
 
 The separate [Prism appearance release](https://github.com/sebastianmiletic/stellarlauncher/releases/tag/stellar-theme-v1.0.0) contains the portable theme for Prism’s management window.
 
