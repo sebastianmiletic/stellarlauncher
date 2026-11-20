@@ -113,9 +113,7 @@ void drawArtwork(QPainter& painter, const QRect& bounds, const QPixmap& picture)
 {
     if (picture.isNull())
         return;
-    const auto target = bounds.size() / picture.devicePixelRatio();
-    QSize source = target;
-    source.scale(picture.size(), Qt::KeepAspectRatio);
+    const auto source = bounds.size().scaled(picture.size(), Qt::KeepAspectRatio);
     painter.drawPixmap(bounds, picture, QRect(QPoint((picture.width() - source.width()) / 2,
                                                        (picture.height() - source.height()) / 2), source));
 }
@@ -141,15 +139,17 @@ QImage readWallpaper(const QString& path, const QSize& bounds, bool cover = fals
     QImageReader reader(path);
     reader.setAutoTransform(true);
     const auto size = reader.size();
-    if (size.isValid())
-        reader.setScaledSize(size.boundedTo(size.scaled(bounds, cover ? Qt::KeepAspectRatioByExpanding : Qt::KeepAspectRatio)));
+    if (!size.isValid() || bounds.isEmpty() || qint64(size.width()) * size.height() > 48'000'000)
+        return {};
     auto image = reader.read();
-    if (cover && !image.isNull()) {
-        const auto crop = bounds.scaled(image.size(), Qt::KeepAspectRatio).boundedTo(bounds);
-        if (crop.isValid() && crop != image.size())
+    if (image.isNull())
+        return {};
+    if (cover) {
+        const auto crop = bounds.scaled(image.size(), Qt::KeepAspectRatio);
+        if (crop != image.size())
             image = image.copy((image.width() - crop.width()) / 2, (image.height() - crop.height()) / 2, crop.width(), crop.height());
     }
-    return image;
+    return image.scaled(bounds.boundedTo(image.size()), Qt::KeepAspectRatio, Qt::SmoothTransformation);
 }
 
 int pixmapKiB(const QImage& image)
@@ -1018,7 +1018,7 @@ StellarGallery::StellarGallery(Actions actions, QWidget* parent)
         }
     }
 
-    m_collections.append({QStringLiteral("animated"), tr("Animated GIFs"), {}, {}, {}});
+    m_collections.append({QStringLiteral("animated"), tr("My Wallpapers"), {}, {}, {}});
     auto* accounts = APPLICATION->accounts();
     connect(accounts, &AccountList::listChanged, this, &StellarGallery::updateAccountIcons);
     connect(accounts, &AccountList::defaultAccountChanged, this, &StellarGallery::updateAccountIcons);
@@ -2052,51 +2052,123 @@ void StellarGallery::updateAccountIcons()
         QLocale().toString(instances->count()));
 }
 
+QDialog* StellarGallery::galleryDialog(const QString& name, QVBoxLayout*& shell)
+{
+    auto* dialog = new QDialog(window(), Qt::Dialog | Qt::FramelessWindowHint);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(name);
+    dialog->setFixedSize(windowSize);
+    QPainterPath outline;
+    outline.addRoundedRect(dialog->rect(), cornerRadius, cornerRadius);
+    dialog->setMask(QRegion(outline.toFillPolygon().toPolygon()));
+    dialog->move(window()->frameGeometry().topLeft());
+    shell = new QVBoxLayout(dialog);
+    shell->setContentsMargins(18, 10, 18, 13);
+    shell->setSpacing(12);
+    auto* header = new QHBoxLayout;
+    auto* title = new QLabel(name, dialog);
+    title->setStyleSheet("font-size: 17px; font-weight: 600;");
+    header->addWidget(title, 1);
+    auto* close = new GalleryButton(QStringLiteral("×"), dialog);
+    close->setAccessibleName(tr("Close"));
+    close->setFixedWidth(34);
+    close->setAutoDefault(false);
+    header->addWidget(close);
+    shell->addLayout(header);
+    connect(close, &QPushButton::clicked, dialog, &QDialog::close);
+    auto* shortcut = new QShortcut(QKeySequence::Close, dialog);
+    connect(shortcut, &QShortcut::activated, dialog, &QDialog::close);
+    return dialog;
+}
+
 void StellarGallery::showAccounts()
 {
-    if (m_panel && m_panel->property("accountsDropdown").toBool()) {
-        dismissPanel();
+    dismissPanel();
+    if (m_accountsWindow) {
+        m_accountsWindow->raise();
+        m_accountsWindow->activateWindow();
         return;
     }
-    auto* panel = makePanel(tr("Minecraft Accounts"));
-    panel->setProperty("accountsDropdown", true);
-    panel->setFixedWidth(248);
-    auto* layout = qobject_cast<QVBoxLayout*>(panel->layout());
-    const auto add = [this, panel, layout](const QIcon& icon, const QString& label, const std::function<void()>& action) {
-        auto* button = new GalleryButton(icon, label, panel);
-        layout->addWidget(button);
-        connect(button, &QPushButton::clicked, panel, [this, action] {
-            dismissPanel();
-            action();
-        });
+    QVBoxLayout* layout;
+    auto* dialog = galleryDialog(tr("Accounts & Settings"), layout);
+    m_accountsWindow = dialog;
+    auto* content = new QHBoxLayout;
+    content->setSpacing(16);
+    layout->addLayout(content, 1);
+    auto* accountList = new QVBoxLayout;
+    content->addLayout(accountList, 1);
+    auto* profiles = new QListWidget(dialog);
+    profiles->setAccessibleName(tr("Minecraft accounts"));
+    profiles->setIconSize(QSize(32, 32));
+    profiles->setSpacing(3);
+    accountList->addWidget(profiles);
+    auto* empty = new QLabel(tr("No accounts yet"), dialog);
+    empty->setAlignment(Qt::AlignCenter);
+    accountList->addWidget(empty, 1);
+    auto* controls = new QVBoxLayout;
+    content->addLayout(controls);
+    const auto add = [dialog, controls](const QString& label, const std::function<void()>& action) {
+        auto* button = new GalleryButton(label, dialog);
+        button->setMinimumWidth(174);
+        button->setAutoDefault(false);
+        controls->addWidget(button);
+        connect(button, &QPushButton::clicked, dialog, action);
+        return button;
     };
     auto* accounts = APPLICATION->accounts();
-    auto* profiles = new QListWidget(panel);
-    profiles->setAccessibleName(tr("Connected accounts"));
-    profiles->setMaximumHeight(128);
-    for (int i = 0; i < accounts->count(); ++i) {
-        const auto account = accounts->at(i);
-        auto* item = new QListWidgetItem(accountFace(account.get()), account->displayName(), profiles);
-        if (accounts->defaultAccount() == account)
-            profiles->setCurrentItem(item);
-    }
-    if (profiles->count()) {
-        layout->addWidget(profiles);
-        connect(profiles, &QListWidget::itemClicked, panel, [this, profiles, accounts](QListWidgetItem* item) {
-            const int index = profiles->row(item);
-            if (index < accounts->count())
-                accounts->setDefaultAccount(accounts->at(index));
-            dismissPanel();
-        });
-    } else {
-        profiles->hide();
-        layout->addWidget(new QLabel(tr("No Microsoft account connected"), panel));
-    }
-    add(accountFace(nullptr), tr("Add Microsoft account…"), [this] { MSALoginDialog::addAccount(this); });
-    add({}, tr("Manage accounts"), m_actions.accounts);
-    add({}, tr("Change skin"), m_actions.skins);
-    add({}, tr("General settings"), [this] { showPreferences(); });
-    placePanel();
+    const auto activate = [accounts, profiles] {
+        const int row = profiles->currentRow();
+        if (row >= 0 && row < accounts->count())
+            accounts->setDefaultAccount(accounts->at(row));
+    };
+    add(tr("Add Microsoft Account…"), [dialog] { MSALoginDialog::addAccount(dialog); });
+    auto* use = add(tr("Set Active"), activate);
+    connect(profiles, &QListWidget::itemActivated, dialog, activate);
+    add(tr("Skins…"), [this, dialog] { dialog->close(); m_actions.skins(); });
+    add(tr("General Settings…"), [this, dialog] { dialog->close(); showPreferences(); });
+    controls->addStretch();
+    auto* remove = add(tr("Remove Account…"), [accounts, profiles, dialog] {
+        const int row = profiles->currentRow();
+        if (row < 0 || row >= accounts->count())
+            return;
+        const auto account = accounts->at(row);
+        if (QMessageBox::question(dialog, tr("Remove Account"), tr("Remove %1 from Stellar?").arg(account->displayName()))
+            == QMessageBox::Yes) {
+            for (int i = 0; i < accounts->count(); ++i) {
+                if (accounts->at(i) == account) {
+                    accounts->removeAccount(accounts->index(i, 0));
+                    break;
+                }
+            }
+        }
+    });
+    const auto updateButtons = [profiles, accounts, use, remove] {
+        const int row = profiles->currentRow();
+        const bool selected = row >= 0 && row < accounts->count();
+        use->setEnabled(selected && accounts->at(row) != accounts->defaultAccount());
+        remove->setEnabled(selected);
+    };
+    const auto populate = [accounts, profiles, empty, updateButtons] {
+        profiles->clear();
+        for (int row = 0; row < accounts->count(); ++row) {
+            const auto account = accounts->at(row);
+            const bool active = account == accounts->defaultAccount();
+            auto* item = new QListWidgetItem(accountFace(account.get()), active ? tr("%1  ·  Active").arg(account->displayName())
+                                                                              : account->displayName(), profiles);
+            if (active)
+                profiles->setCurrentItem(item);
+        }
+        profiles->setVisible(profiles->count() > 0);
+        empty->setVisible(profiles->count() == 0);
+        updateButtons();
+    };
+    connect(profiles, &QListWidget::currentRowChanged, dialog, updateButtons);
+    connect(accounts, &AccountList::listChanged, dialog, populate);
+    connect(accounts, &AccountList::defaultAccountChanged, dialog, populate);
+    populate();
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
 }
 
 void StellarGallery::showPreferences()
@@ -2107,30 +2179,9 @@ void StellarGallery::showPreferences()
         m_preferences->activateWindow();
         return;
     }
-    auto* preferences = new QDialog(window(), Qt::Dialog | Qt::FramelessWindowHint);
+    QVBoxLayout* shell;
+    auto* preferences = galleryDialog(tr("General Settings"), shell);
     m_preferences = preferences;
-    preferences->setAttribute(Qt::WA_DeleteOnClose);
-    preferences->setWindowTitle(tr("General Settings"));
-    preferences->setFixedSize(windowSize);
-    QPainterPath outline;
-    outline.addRoundedRect(preferences->rect(), cornerRadius, cornerRadius);
-    preferences->setMask(QRegion(outline.toFillPolygon().toPolygon()));
-    preferences->move(window()->frameGeometry().topLeft());
-    auto* shell = new QVBoxLayout(preferences);
-    shell->setContentsMargins(18, 10, 18, 13);
-    shell->setSpacing(10);
-    auto* header = new QHBoxLayout;
-    auto* title = new QLabel(tr("General Settings"), preferences);
-    title->setStyleSheet("font-size: 17px; font-weight: 600;");
-    header->addWidget(title, 1);
-    auto* close = new GalleryButton(QStringLiteral("×"), preferences);
-    close->setAccessibleName(tr("Close settings"));
-    close->setFixedWidth(34);
-    header->addWidget(close);
-    shell->addLayout(header);
-    connect(close, &QPushButton::clicked, preferences, &QDialog::close);
-    auto* shortcut = new QShortcut(QKeySequence::Close, preferences);
-    connect(shortcut, &QShortcut::activated, preferences, &QDialog::close);
 
     auto* columns = new QHBoxLayout;
     columns->setSpacing(22);
@@ -2183,28 +2234,24 @@ void StellarGallery::showPreferences()
     });
     select(appearance, tr("Minecraft title"), "StellarTitleTint", colors);
     select(appearance, tr("Black hole disk"), "StellarDiskTint", colors);
-    auto* hint = new QLabel(tr("Minecraft colors apply on the next launch. Disk colors require Java Edition 26.3."), preferences);
-    hint->setWordWrap(true);
-    hint->setStyleSheet("color: #aeabb7;");
-    appearance->addWidget(hint);
-    check(appearance, tr("Use the Stellar Minecraft title screen"), "StellarTitleScreen");
-    check(appearance, tr("Enable motion effects"), "StellarMotion");
-    check(appearance, tr("Animate when Stellar opens"), "StellarOpeningAnimation");
+    check(appearance, tr("Stellar title screen"), "StellarTitleScreen");
+    check(appearance, tr("Motion effects"), "StellarMotion");
+    check(appearance, tr("Opening animation"), "StellarOpeningAnimation");
     appearance->addStretch();
 
     select(behavior, tr("Launch indicator"), "StellarLaunchAnimation",
            {{tr("Subtle progress"), "progress"}, {tr("Wallpaper wave"), "wave"}, {tr("Wallpaper fade"), "fade"},
             {tr("Horizontal wipe"), "wipe"}, {tr("Iris reveal"), "iris"}, {tr("Status only"), "off"}});
-    select(behavior, tr("Library loader filter"), "StellarLoaderFilter",
+    select(behavior, tr("Loader filter"), "StellarLoaderFilter",
            {{tr("All loaders"), ""}, {tr("Vanilla"), "Vanilla"}, {"Fabric", "Fabric"}, {"Forge", "Forge"},
             {"NeoForge", "NeoForge"}, {"Quilt", "Quilt"}, {"LiteLoader", "LiteLoader"}}, [this] { rebuild(); });
-    check(behavior, tr("Fill screen when Minecraft opens"), "StellarFillScreen");
-    check(behavior, tr("Match mods when switching versions"), "StellarAutoMatchMods");
-    auto* account = new GalleryButton(tr("Microsoft application ID…"), preferences);
+    check(behavior, tr("Fullscreen on launch"), "StellarFillScreen");
+    check(behavior, tr("Match mods on version change"), "StellarAutoMatchMods");
+    auto* account = new GalleryButton(tr("Microsoft App ID…"), preferences);
     behavior->addWidget(account);
     connect(account, &QPushButton::clicked, preferences, [preferences] { MSALoginDialog::configureMicrosoftApplication(preferences); });
 #ifdef Q_OS_MACOS
-    auto* compact = new GalleryButton(tr("Deduplicate identical mods"), preferences);
+    auto* compact = new GalleryButton(tr("Deduplicate Mods"), preferences);
     behavior->addWidget(compact);
     connect(compact, &QPushButton::clicked, preferences, [this, compact] {
         QList<QDir> allMods;
@@ -2228,7 +2275,6 @@ void StellarGallery::showPreferences()
     });
 #endif
     behavior->addStretch();
-    close->setAutoDefault(false);
     preferences->show();
     preferences->raise();
     preferences->activateWindow();
@@ -2236,15 +2282,22 @@ void StellarGallery::showPreferences()
 
 QStringList StellarGallery::images(const Collection& collection) const
 {
-    QDir directory(QDir(m_wallpapers).filePath(collection.id));
-    if (collection.id != "animated" && !directory.exists()) {
-        const auto legacy = QDir::home().filePath("Library/Application Support/Stellar Gallery/Wallpapers");
-        directory = QDir(QDir(legacy).filePath(collection.id));
-    }
     QStringList paths;
-    const auto contents = directory.entryInfoList({ "*.jpg", "*.jpeg", "*.png", "*.webp", "*.gif" }, QDir::Files, QDir::Name);
-    for (const auto& entry : contents)
-        paths.append(entry.absoluteFilePath());
+    QSet<QString> names;
+    const auto appendImages = [&paths, &names](const QDir& directory) {
+        const auto files = directory.entryInfoList({"*.jpg", "*.jpeg", "*.png", "*.webp", "*.gif"}, QDir::Files, QDir::Name);
+        for (const auto& file : files) {
+            if (!names.contains(file.fileName())) {
+                paths.append(file.absoluteFilePath());
+                names.insert(file.fileName());
+            }
+        }
+    };
+    appendImages(QDir(QDir(m_wallpapers).filePath(collection.id)));
+    if (collection.id != "animated") {
+        const auto legacy = QDir::home().filePath("Library/Application Support/Stellar Gallery/Wallpapers");
+        appendImages(QDir(QDir(legacy).filePath(collection.id)));
+    }
     return paths;
 }
 
@@ -2256,26 +2309,32 @@ QString StellarGallery::artworkPath(const QString& instance, const QString& vers
     const auto found = std::find_if(m_collections.cbegin(), m_collections.cend(),
                                     [&version](const Collection& item) { return item.versions.contains(version); });
     const auto& collection = found == m_collections.cend() ? m_collections.constFirst() : *found;
-    QString file = selected;
-    if (!QFileInfo::exists(file)) {
-        const auto files = images(collection);
-        if (files.isEmpty())
-            fetchArtwork(collection);
-        for (const auto* label : { "3840x2160", "2560x1440", "1920x1080", "desktop", "landscape" }) {
-            const auto match = std::find_if(files.cbegin(), files.cend(), [label](const auto& path) {
-                return QFileInfo(path).fileName().contains(QString::fromLatin1(label), Qt::CaseInsensitive);
-            });
-            if (match != files.cend()) {
-                file = *match;
-                break;
+    if (QFileInfo(selected).isFile())
+        return selected;
+    const auto files = images(collection);
+    if (files.isEmpty())
+        fetchArtwork(collection);
+    const auto best = [this](const QStringList& paths) {
+        QString choice;
+        qint64 resolution = 0;
+        for (const auto& path : paths) {
+            if (!m_wallpaperDimensions.contains(path))
+                m_wallpaperDimensions.insert(path, QImageReader(path).size());
+            const auto size = m_wallpaperDimensions.value(path);
+            // The same landscape image is used for both the card and the full instance view.
+            const auto usablePixels = qint64(size.width()) * qMin(size.height(), size.width() * 9 / 16);
+            if (usablePixels > resolution) {
+                resolution = usablePixels;
+                choice = path;
             }
         }
-        if (file.isEmpty()) {
-            const auto defaults = images(m_collections.constFirst());
-            file = files.isEmpty() ? defaults.value(0, QString(":/stellar-gallery/fallback.jpg")) : files.first();
-        }
-    }
-    return file;
+        return choice;
+    };
+    if (const auto file = best(files); !file.isEmpty())
+        return file;
+    if (const auto file = best(images(m_collections.constFirst())); !file.isEmpty())
+        return file;
+    return QStringLiteral(":/stellar-gallery/fallback.jpg");
 }
 
 void StellarGallery::scheduleThumbnails()
@@ -2401,6 +2460,7 @@ void StellarGallery::fetchArtwork(const Collection& collection)
             }});
         }).then(this, [this, id = collection.id] {
             m_fetching.remove(id);
+            m_wallpaperDimensions.clear();
             updateArtwork();
         });
     });
@@ -2423,193 +2483,249 @@ void StellarGallery::updateArtwork()
 
 void StellarGallery::showWallpapers(const QString& instance)
 {
-    auto* panel = makePanel(tr("Wallpapers"));
-    panel->setFixedWidth(598);
-    auto* layout = qobject_cast<QVBoxLayout*>(panel->layout());
-    auto* collections = new QComboBox(panel);
-    collections->setAccessibleName(tr("Wallpaper collection"));
-    for (const auto& item : m_collections)
-        collections->addItem(item.title);
-    auto* files = new QListWidget(panel);
-    files->setFixedHeight(176);
-    files->setAccessibleName(tr("Available wallpapers"));
-    auto* apply = new GalleryButton(tr("Use Wallpaper"), panel);
-    apply->setProperty("stellarPrimary", true);
-    layout->addWidget(collections);
-    auto* body = new QHBoxLayout;
-    body->addWidget(files, 1);
-    auto* preview = new QLabel(panel);
-    preview->setAccessibleName(tr("Wallpaper preview"));
-    preview->setAlignment(Qt::AlignCenter);
-    preview->setFixedSize(308, 176);
-    preview->setStyleSheet("background: #141416; border: 1px solid #37363d; border-radius: 9px;");
-    auto* playback = new WallpaperPlayback(preview);
-    playback->frameChanged = [preview, playback] { preview->setPixmap(playback->currentPixmap()); };
-    body->addWidget(preview);
-    layout->addLayout(body);
-    connect(files, &QListWidget::currentItemChanged, panel, [preview, playback](const QListWidgetItem* item) {
-        playback->setFile({}, {});
-        preview->setText(QObject::tr("No preview available"));
-        preview->setProperty("stellarPreviewPath", QString());
-        if (!item)
-            return;
-        const auto path = item->data(Qt::UserRole).toString();
-        const auto bounds = preview->size() - QSize(6, 6);
-        preview->setProperty("stellarPreviewPath", path);
-        if (path.endsWith(".gif", Qt::CaseInsensitive) && motionEnabled())
-            playback->setFile(path, bounds);
-        QtConcurrent::run(wallpaperPool(), [path, bounds] { return readWallpaper(path, bounds); })
-            .then(preview, [preview, playback, path](const QImage& image) {
-                if (preview->property("stellarPreviewPath").toString() == path &&
-                    playback->currentPixmap().isNull() && !image.isNull())
-                    preview->setPixmap(QPixmap::fromImage(image));
-            });
-    });
-    preview->setText(tr("No wallpaper selected"));
-    auto* shuffle = new QCheckBox(tr("Shuffle this collection when opening the instance"), panel);
-    const auto activeShuffle = APPLICATION->settings()->get("StellarWallpaperShuffle").toMap().value(instance).toString();
-    shuffle->setVisible(!instance.isEmpty());
-    layout->addWidget(shuffle);
-    auto* buttons = new QHBoxLayout;
-    auto* import = new GalleryButton(tr("Add GIFs…"), panel);
-    buttons->addWidget(import);
-    auto* refresh = new GalleryButton(tr("Fetch Collection"), panel);
-    buttons->addWidget(refresh);
-    buttons->addStretch();
-    if (!instance.isEmpty()) {
-        auto* reset = new GalleryButton(tr("Reset"), panel);
-        buttons->addWidget(reset);
-        connect(reset, &QPushButton::clicked, panel, [this, instance] {
-            auto covers = APPLICATION->settings()->get("StellarWallpaperCovers").toMap();
-            covers.remove(instance);
-            APPLICATION->settings()->set("StellarWallpaperCovers", covers);
-            auto shuffled = APPLICATION->settings()->get("StellarWallpaperShuffle").toMap();
-            shuffled.remove(instance);
-            APPLICATION->settings()->set("StellarWallpaperShuffle", shuffled);
-            m_detailWallpaper.clear();
-            updateArtwork();
-            dismissPanel();
-        });
+    dismissPanel();
+    if (m_wallpaperWindow) {
+        m_wallpaperWindow->hide();
+        m_wallpaperWindow->deleteLater();
     }
-    buttons->addWidget(apply);
-    layout->addLayout(buttons);
-    const auto populate = [this, collections, files, apply, refresh, import, shuffle] {
-        const int index = collections->currentIndex();
-        if (index < 0 || index >= m_collections.size())
-            return;
-        const auto& collection = m_collections[index];
-        const auto paths = images(collection);
-        if (files->count() != paths.size()) {
-            files->clear();
-            for (const auto& path : paths) {
-                auto* item = new QListWidgetItem(QFileInfo(path).fileName(), files);
-                item->setData(Qt::UserRole, path);
-            }
-            if (files->count())
-                files->setCurrentRow(0);
-        }
-        const bool gif = collection.id == "animated";
-        import->setVisible(gif);
-        refresh->setVisible(!gif);
-        refresh->setEnabled(!m_fetching.contains(collection.id));
-        shuffle->setEnabled(!paths.isEmpty());
-        apply->setEnabled(files->currentItem() != nullptr);
-    };
-    connect(collections, &QComboBox::currentIndexChanged, panel, [files, populate] { files->clear(); populate(); });
-    connect(shuffle, &QCheckBox::toggled, apply, [apply](bool enabled) {
-        apply->setText(enabled ? tr("Use Shuffle") : tr("Use Wallpaper"));
-    });
-    connect(import, &QPushButton::clicked, panel, [this, panel, collections, files, populate] {
-        const auto paths = QFileDialog::getOpenFileNames(panel, tr("Add animated wallpapers"), {}, tr("GIF images (*.gif)"));
-        const auto folder = QDir(m_wallpapers).filePath("animated");
-        if (paths.isEmpty())
-            return;
-        int imported = 0;
-        if (QDir().mkpath(folder)) {
-            for (const auto& path : paths) {
-                QFileInfo file(path);
-                QImageReader reader(path, "gif");
-                const auto size = reader.size();
-                if (file.size() > 64 * 1024 * 1024 || !size.isValid() || size.width() > 4096 || size.height() > 4096)
-                    continue;
-                QDir directory(folder);
-                auto target = directory.filePath(file.fileName());
-                if (QFileInfo::exists(target))
-                    target = directory.filePath(file.completeBaseName() + "-" + QUuid::createUuid().toString(QUuid::Id128).left(8) + ".gif");
-                if (QFile::copy(path, target))
-                    ++imported;
-            }
-        }
-        if (imported != paths.size())
-            QMessageBox::information(panel, tr("Animated wallpapers"), tr("Imported %1 of %2 GIFs. Each GIF must be at most 64 MB and 4096 pixels wide or tall.").arg(imported).arg(paths.size()));
-        collections->setCurrentIndex(m_collections.size() - 1);
-        files->clear();
-        populate();
-    });
-    connect(refresh, &QPushButton::clicked, panel, [this, collections, populate] {
-        const int index = collections->currentIndex();
-        if (index < 0)
-            return;
-        auto collection = m_collections[index];
-        collection.fallback = QUrl();
-        m_attempted.remove(collection.id);
-        fetchArtwork(collection);
-        populate();
-    });
-    connect(apply, &QPushButton::clicked, panel, [this, files, instance, shuffle, collections] {
-        if (auto* item = files->currentItem()) {
-            const auto path = item->data(Qt::UserRole).toString();
-            if (instance.isEmpty()) {
-                QDesktopServices::openUrl(QUrl::fromLocalFile(path));
-            } else {
-                auto covers = APPLICATION->settings()->get("StellarWallpaperCovers").toMap();
-                covers.insert(instance, path);
-                APPLICATION->settings()->set("StellarWallpaperCovers", covers);
-                auto shuffled = APPLICATION->settings()->get("StellarWallpaperShuffle").toMap();
-                if (shuffle->isChecked())
-                    shuffled.insert(instance, m_collections.at(collections->currentIndex()).id);
-                else
-                    shuffled.remove(instance);
-                APPLICATION->settings()->set("StellarWallpaperShuffle", shuffled);
-                m_detailWallpaper.clear();
-                updateArtwork();
-                dismissPanel();
-            }
-        }
-    });
-    auto* refreshTimer = new QTimer(panel);
-    connect(refreshTimer, &QTimer::timeout, panel, populate);
-    refreshTimer->start(1200);
-    const auto selected = APPLICATION->settings()->get("StellarWallpaperCovers").toMap().value(instance).toString();
-    auto collection = activeShuffle.isEmpty() ? QFileInfo(selected).dir().dirName() : activeShuffle;
-    if (selected.isEmpty() && activeShuffle.isEmpty()) {
+    QVBoxLayout* layout;
+    auto* dialog = galleryDialog(tr("Wallpapers"), layout);
+    m_wallpaperWindow = dialog;
+    auto* toolbar = new QHBoxLayout;
+    layout->addLayout(toolbar);
+    auto* collections = new QComboBox(dialog);
+    collections->setAccessibleName(tr("Wallpaper collection"));
+    for (const auto& collection : std::as_const(m_collections))
+        collections->addItem(collection.title, collection.id);
+    toolbar->addWidget(collections);
+    toolbar->addStretch();
+    auto* download = new GalleryButton(tr("Download Collection"), dialog);
+    auto* upload = new GalleryButton(tr("Upload…"), dialog);
+    toolbar->addWidget(download);
+    toolbar->addWidget(upload);
+
+    auto* files = new QListWidget(dialog);
+    files->setAccessibleName(tr("Wallpaper previews"));
+    files->setViewMode(QListView::IconMode);
+    files->setMovement(QListView::Static);
+    files->setWrapping(true);
+    files->setResizeMode(QListView::Adjust);
+    files->setGridSize(QSize(190, 109));
+    const QSize previewSize(180, 100);
+    files->setIconSize(previewSize);
+    files->setStyleSheet("QListWidget { background: #17171b; }"
+        "QListWidget::item { border: 2px solid transparent; border-radius: 8px; }"
+        "QListWidget::item:selected { border-color: palette(highlight); background: #1c1c20; }");
+    auto* empty = new QLabel(dialog);
+    empty->setAlignment(Qt::AlignCenter);
+    layout->addWidget(files, 1);
+    layout->addWidget(empty, 1);
+
+    auto* bottom = new QHBoxLayout;
+    layout->addLayout(bottom);
+    auto* shuffle = new QCheckBox(tr("Shuffle collection"), dialog);
+    auto* status = new QLabel(dialog);
+    bottom->addWidget(shuffle);
+    bottom->addWidget(status);
+    bottom->addStretch();
+    auto* reset = new GalleryButton(tr("Reset"), dialog);
+    auto* apply = new GalleryButton(tr("Use Wallpaper"), dialog);
+    apply->setProperty("stellarPrimary", true);
+    bottom->addWidget(reset);
+    bottom->addWidget(apply);
+    shuffle->setVisible(!instance.isEmpty());
+    reset->setVisible(!instance.isEmpty());
+    if (instance.isEmpty())
+        apply->setText(tr("Open Image"));
+    for (auto* button : {download, upload, reset, apply})
+        button->setAutoDefault(false);
+
+    const auto activeShuffle = APPLICATION->settings()->get("StellarWallpaperShuffle").toMap().value(instance).toString();
+    const auto currentCover = APPLICATION->settings()->get("StellarWallpaperCovers").toMap().value(instance).toString();
+    auto activeCollection = activeShuffle.isEmpty() ? QFileInfo(currentCover).dir().dirName() : activeShuffle;
+    if (currentCover.isEmpty() && activeShuffle.isEmpty()) {
         if (const auto* current = APPLICATION->instances()->getInstanceById(instance)) {
             const auto version = versionOf(current).minecraft;
-            for (const auto& candidate : std::as_const(m_collections)) {
-                if (candidate.versions.contains(version)) {
-                    collection = candidate.id;
+            for (const auto& collection : std::as_const(m_collections)) {
+                if (collection.versions.contains(version)) {
+                    activeCollection = collection.id;
                     break;
                 }
             }
         }
     }
-    for (int i = 0; i < m_collections.size(); ++i) {
-        if (m_collections.at(i).id == collection) {
-            collections->setCurrentIndex(i);
-            break;
-        }
-    }
-    if (instance.isEmpty())
-        collections->setCurrentIndex(m_collections.size() - 1);
+    collections->setCurrentIndex(instance.isEmpty() ? collections->findData("animated") : qMax(0, collections->findData(activeCollection)));
     shuffle->setChecked(!activeShuffle.isEmpty());
-    populate();
-    for (int i = 0; i < files->count(); ++i) {
-        if (files->item(i)->data(Qt::UserRole).toString() == selected) {
-            files->setCurrentRow(i);
-            break;
+    const auto setCover = [this, instance](const QString& path, const QString& collection) {
+        auto covers = APPLICATION->settings()->get("StellarWallpaperCovers").toMap();
+        auto shuffled = APPLICATION->settings()->get("StellarWallpaperShuffle").toMap();
+        if (path.isEmpty())
+            covers.remove(instance);
+        else
+            covers.insert(instance, path);
+        if (collection.isEmpty())
+            shuffled.remove(instance);
+        else
+            shuffled.insert(instance, collection);
+        APPLICATION->settings()->set("StellarWallpaperCovers", covers);
+        APPLICATION->settings()->set("StellarWallpaperShuffle", shuffled);
+        m_detailWallpaper.clear();
+        updateArtwork();
+    };
+
+    const auto previewCache = std::make_shared<QCache<QString, QPixmap>>(12 * 1024);
+    const auto refresh = [this, dialog, collections, files, empty, download, apply, shuffle, currentCover, previewCache, previewSize] {
+        const auto& collection = m_collections.at(collections->currentIndex());
+        const auto paths = images(collection);
+        const bool personal = collection.id == "animated";
+        const bool loading = m_fetching.contains(collection.id);
+        download->setVisible(!personal && paths.isEmpty());
+        download->setEnabled(!loading);
+        files->setVisible(!paths.isEmpty());
+        empty->setVisible(paths.isEmpty());
+        if (paths.isEmpty())
+            empty->setText(loading ? tr("Downloading wallpapers…") : (personal ? tr("Upload a wallpaper to start your library.")
+                                                                              : tr("Download this wallpaper collection.")));
+        shuffle->setEnabled(!paths.isEmpty());
+        if (files->property("displayedPaths").toStringList() == paths) {
+            apply->setEnabled(files->currentItem());
+            return;
         }
-    }
-    placePanel();
+        files->setProperty("displayedPaths", paths);
+        files->clear();
+        QPixmap placeholder(previewSize);
+        placeholder.fill(QColor("#26252b"));
+        auto thumbnails = QStringList{};
+        const qreal ratio = files->devicePixelRatioF();
+        for (const auto& path : paths) {
+            auto* item = new QListWidgetItem(files);
+            item->setData(Qt::UserRole, path);
+            const auto label = QFileInfo(path).completeBaseName();
+            item->setData(Qt::AccessibleTextRole, label);
+            item->setToolTip(label);
+            if (auto* cached = previewCache->object(path)) {
+                item->setIcon(*cached);
+            } else {
+                item->setIcon(placeholder);
+                thumbnails.append(path);
+            }
+            if (path == currentCover)
+                files->setCurrentItem(item);
+        }
+        if (!files->currentItem() && !paths.isEmpty())
+            files->setCurrentRow(0);
+        apply->setEnabled(files->currentItem());
+        if (thumbnails.isEmpty())
+            return;
+        QtConcurrent::run(wallpaperPool(), [thumbnails, size = previewSize * ratio] {
+            QList<QPair<QString, QImage>> images;
+            for (const auto& path : thumbnails)
+                images.append({path, readWallpaper(path, size, true)});
+            return images;
+        }).then(dialog, [files, previewCache, ratio](const QList<QPair<QString, QImage>>& images) {
+            for (const auto& [path, image] : images) {
+                if (image.isNull())
+                    continue;
+                auto pixmap = QPixmap::fromImage(image);
+                pixmap.setDevicePixelRatio(ratio);
+                previewCache->insert(path, new QPixmap(pixmap), pixmapKiB(image));
+                for (int row = 0; row < files->count(); ++row) {
+                    auto* item = files->item(row);
+                    if (item->data(Qt::UserRole).toString() == path) {
+                        item->setIcon(pixmap);
+                        break;
+                    }
+                }
+            }
+        });
+    };
+
+    connect(collections, &QComboBox::currentIndexChanged, dialog, refresh);
+    connect(files, &QListWidget::currentItemChanged, apply, [apply](const QListWidgetItem* item) { apply->setEnabled(item); });
+    connect(shuffle, &QCheckBox::toggled, apply, [apply](bool on) { apply->setText(on ? tr("Use Shuffle") : tr("Use Wallpaper")); });
+    if (shuffle->isChecked())
+        apply->setText(tr("Use Shuffle"));
+    const auto applyCover = [dialog, files, collections, shuffle, instance, setCover] {
+        const auto* item = files->currentItem();
+        if (!item)
+            return;
+        const auto path = item->data(Qt::UserRole).toString();
+        if (instance.isEmpty()) {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+            return;
+        }
+        setCover(path, shuffle->isChecked() ? collections->currentData().toString() : QString());
+        dialog->close();
+    };
+    connect(apply, &QPushButton::clicked, dialog, applyCover);
+    connect(files, &QListWidget::itemActivated, dialog, applyCover);
+    connect(reset, &QPushButton::clicked, dialog, [dialog, setCover] {
+        setCover({}, {});
+        dialog->close();
+    });
+    connect(download, &QPushButton::clicked, dialog, [this, collections, refresh] {
+        auto collection = m_collections.at(collections->currentIndex());
+        if (official(collection.archive))
+            collection.fallback = QUrl();
+        m_attempted.remove(collection.id);
+        fetchArtwork(collection);
+        refresh();
+    });
+    connect(upload, &QPushButton::clicked, dialog, [this, dialog, files, collections, status, upload, refresh] {
+        auto* picker = new QFileDialog(dialog, tr("Upload Wallpaper"));
+        picker->setAttribute(Qt::WA_DeleteOnClose);
+        picker->setFileMode(QFileDialog::ExistingFiles);
+        picker->setNameFilter(tr("Images (*.png *.jpg *.jpeg *.webp *.gif)"));
+        const auto folder = QDir(m_wallpapers).filePath("animated");
+        connect(picker, &QFileDialog::filesSelected, dialog, [dialog, files, collections, status, upload, folder, refresh](const QStringList& paths) {
+            upload->setEnabled(false);
+            status->setText(tr("Importing…"));
+            QtConcurrent::run(wallpaperPool(), [paths, folder] {
+                QStringList imported;
+                if (!QDir().mkpath(folder))
+                    return imported;
+                for (const auto& path : paths) {
+                    const QFileInfo file(path);
+                    QImageReader reader(path);
+                    const auto format = reader.format();
+                    const auto size = reader.size();
+                    if (!QList<QByteArray>{"png", "jpeg", "webp", "gif"}.contains(format) || !size.isValid()
+                        || qint64(size.width()) * size.height() > 48'000'000 || file.size() > 64 * 1024 * 1024)
+                        continue;
+                    auto name = file.completeBaseName() + "." + QString::fromLatin1(format);
+                    auto dest = QDir(folder).filePath(name);
+                    if (QFileInfo::exists(dest)) {
+                        name.prepend(QUuid::createUuid().toString(QUuid::Id128).left(8) + "-");
+                        dest = QDir(folder).filePath(name);
+                    }
+                    if (QFile::copy(path, dest))
+                        imported.append(dest);
+                }
+                return imported;
+            }).then(dialog, [files, collections, status, upload, count = paths.size(), refresh](const QStringList& imported) {
+                upload->setEnabled(true);
+                status->setText(imported.size() == count ? QString() : tr("Imported %1 of %2.").arg(imported.size()).arg(count));
+                if (imported.isEmpty())
+                    return;
+                collections->setCurrentIndex(collections->findData("animated"));
+                refresh();
+                for (int row = 0; row < files->count(); ++row) {
+                    if (files->item(row)->data(Qt::UserRole).toString() == imported.first()) {
+                        files->setCurrentRow(row);
+                        break;
+                    }
+                }
+            });
+        });
+        picker->open();
+    });
+    auto* timer = new QTimer(dialog);
+    connect(timer, &QTimer::timeout, dialog, refresh);
+    timer->start(850);
+    refresh();
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
 }
 
 void StellarGallery::updateLaunch()

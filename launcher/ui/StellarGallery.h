@@ -15,6 +15,7 @@
 class QAbstractButton;
 class QFrame;
 class QDialog;
+class QVBoxLayout;
 class QHBoxLayout;
 class QPropertyAnimation;
 class QScrollArea;
@@ -67,6 +68,7 @@ private:
     void editInstance(const QString& id);
     void showActions(int index, QRect anchor = {});
     void showPreferences();
+    QDialog* galleryDialog(const QString& title, QVBoxLayout*& layout);
     void showAccounts();
     void updateAccountIcons();
     void showCreator();
@@ -100,6 +102,8 @@ private:
     QAbstractButton* m_accountTile = nullptr;
     QFrame* m_panel = nullptr;
     QPointer<QDialog> m_preferences;
+    QPointer<QDialog> m_accountsWindow;
+    QPointer<QDialog> m_wallpaperWindow;
     QWidget* m_detail = nullptr;
     QPointer<QWidget> m_detailSlide;
     QList<QAbstractButton*> m_tiles;
@@ -108,6 +112,7 @@ private:
     QCache<QString, QPixmap> m_thumbnails{32 * 1024};
     QSize m_detailImageSize;
     QSize m_thumbnailSize;
+    QHash<QString, QSize> m_wallpaperDimensions;
     QSet<QString> m_pendingThumbnails;
     QSet<QString> m_fetching;
     QSet<QString> m_attempted;

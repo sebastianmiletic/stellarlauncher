@@ -51,6 +51,7 @@ class SkinList : public QAbstractListModel {
 
     void installSkins(const QStringList& iconFiles);
     QString installSkin(const QString& file, const QString& name = {}, QString* installedPath = nullptr);
+    QString installProfileSkin(const QByteArray& png, const QString& username, const QString& url, bool slim);
 
     const SkinModel* skin(const QString& key) const;
     SkinModel* skin(const QString& key);

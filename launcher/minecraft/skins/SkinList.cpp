@@ -390,6 +390,23 @@ QString SkinList::installSkin(const QString& file, const QString& name, QString*
     return {};
 }
 
+QString SkinList::installProfileSkin(const QByteArray& png, const QString& username, const QString& url, bool slim)
+{
+    for (const auto& skin : std::as_const(m_skinList)) {
+        if (skin.name().compare(username, Qt::CaseInsensitive) == 0 && skin.getURL() == url)
+            return skin.getPath();
+    }
+    const auto path = getUniqueFile(m_dir.absolutePath(), username + ".png");
+    QSaveFile file(path);
+    if (path.isEmpty() || !file.open(QIODevice::WriteOnly) || file.write(png) != png.size() || !file.commit())
+        return {};
+    SkinModel skin(path);
+    skin.setURL(url);
+    skin.setModel(slim ? SkinModel::SLIM : SkinModel::CLASSIC);
+    updateSkin(&skin);
+    return path;
+}
+
 int SkinList::getSkinIndex(const QString& key) const
 {
     for (int i = 0; i < m_skinList.count(); i++) {

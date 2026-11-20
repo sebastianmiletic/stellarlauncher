@@ -63,6 +63,7 @@ class SkinManageDialog : public QDialog, public SkinProvider {
     void getSkinData(const QUrl& url, std::function<void(QNetworkReply*)> completed);
     void findUsername(const QString& user, bool fallback = false);
     void getUsernameTexture(const QString& user, const QString& id);
+    void downloadProfileSkin(const QString& user, const QUrl& texture, bool slim, bool retry = false);
     void finishSkinLookup(const QString& status);
     bool selectImportedSkin(const QString& path);
 

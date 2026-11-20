@@ -505,13 +505,17 @@ void SkinManageDialog::on_userBtn_clicked()
 void SkinManageDialog::getSkinData(const QUrl& url, std::function<void(QNetworkReply*)> completed)
 {
     QNetworkRequest request(url);
-    request.setTransferTimeout(5500);
+    request.setTransferTimeout(5000);
+    request.setRawHeader("User-Agent", "StellarLauncher/Minecraft Java Skin Lookup");
+    request.setRawHeader("Accept", url.host() == "textures.minecraft.net" ? "image/png" : "application/json");
+    request.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::AlwaysNetwork);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     auto* reply = APPLICATION->network()->get(request);
-    connect(reply, &QNetworkReply::finished, this, [reply, completed = std::move(completed)] {
-        completed(reply);
-        reply->deleteLater();
+    connect(reply, &QNetworkReply::downloadProgress, reply, [reply](qint64 received, qint64 total) {
+        if (qMax(received, total) > 128 * 1024)
+            reply->abort();
     });
+    connect(reply, &QNetworkReply::finished, this, [reply, completed = std::move(completed)] { completed(reply); });
     connect(this, &QObject::destroyed, reply, &QNetworkReply::abort);
     connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
 }
@@ -530,10 +534,12 @@ void SkinManageDialog::findUsername(const QString& user, bool fallback)
         const auto status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const auto profile = QJsonDocument::fromJson(reply->readAll()).object();
         const auto id = profile.value("id").toString();
+        auto uuidText = id;
+        uuidText.remove('-');
         static const QRegularExpression uuid("^[0-9a-fA-F]{32}$");
-        if (reply->error() == QNetworkReply::NoError && uuid.match(id).hasMatch()) {
-            getUsernameTexture(user, id);
-        } else if (!fallback && status != 404 && status != 204) {
+        if (reply->error() == QNetworkReply::NoError && uuid.match(uuidText).hasMatch()) {
+            getUsernameTexture(user, uuidText);
+        } else if (!fallback) {
             findUsername(user, true);
         } else {
             finishSkinLookup(status == 404 || status == 204 ? tr("Minecraft couldn’t find %1.").arg(user)
@@ -556,35 +562,37 @@ void SkinManageDialog::getUsernameTexture(const QString& user, const QString& id
                 finishSkinLookup(tr("The profile has no available Minecraft skin."));
                 return;
             }
-            getSkinData(texture, [this, user, profile](QNetworkReply* image) {
-                const auto bytes = image->readAll();
-                const QSize size = bytes.size() <= 128 * 1024 ? QImage::fromData(bytes, "PNG").size() : QSize();
-                if (image->error() != QNetworkReply::NoError || image->url().host() != "textures.minecraft.net" ||
-                    (size != QSize(64, 64) && size != QSize(64, 32))) {
-                    finishSkinLookup(tr("Couldn’t download a valid skin."));
-                    return;
-                }
-                QTemporaryDir staging;
-                const auto path = staging.filePath("skin.png");
-                if (!staging.isValid() || !FS::write(path, bytes)) {
-                    finishSkinLookup(tr("Couldn’t save the downloaded skin."));
-                    return;
-                }
-                QString installed;
-                const auto error = m_list.installSkin(path, user + ".png", &installed);
-                if (!error.isEmpty()) {
-                    finishSkinLookup(error);
-                    return;
-                }
-                SkinModel skin(installed);
-                skin.setModel(profile.skin.variant.compare("slim", Qt::CaseInsensitive) == 0 ? SkinModel::SLIM : SkinModel::CLASSIC);
-                skin.setURL(profile.skin.url);
-                m_list.updateSkin(&skin);
-                m_importedUserSkins.insert(user.toLower(), installed);
-                selectImportedSkin(installed);
-                finishSkinLookup(tr("Imported %1").arg(user));
-            });
+            const auto name = profile.name.isEmpty() ? user : profile.name;
+            static const QRegularExpression canonicalName("^[A-Za-z0-9_]{1,16}$");
+            downloadProfileSkin(canonicalName.match(name).hasMatch() ? name : user, texture,
+                                profile.skin.variant.compare("slim", Qt::CaseInsensitive) == 0);
         });
+}
+
+void SkinManageDialog::downloadProfileSkin(const QString& user, const QUrl& texture, bool slim, bool retry)
+{
+    auto source = texture;
+    if (retry)
+        source.setQuery("source=stellar");
+    getSkinData(source, [this, user, texture, slim, retry](QNetworkReply* reply) {
+        const auto bytes = reply->readAll();
+        const auto image = bytes.size() <= 128 * 1024 ? QImage::fromData(bytes, "PNG") : QImage();
+        if (reply->error() != QNetworkReply::NoError || reply->url().host() != "textures.minecraft.net"
+            || (image.size() != QSize(64, 64) && image.size() != QSize(64, 32))) {
+            if (!retry)
+                downloadProfileSkin(user, texture, slim, true);
+            else
+                finishSkinLookup(tr("Minecraft couldn’t serve %1’s skin. Try again.").arg(user));
+            return;
+        }
+        const auto installed = m_list.installProfileSkin(bytes, user, texture.toString(), slim);
+        if (!selectImportedSkin(installed)) {
+            finishSkinLookup(tr("Couldn’t save the downloaded skin."));
+            return;
+        }
+        m_importedUserSkins.insert(user.toLower(), installed);
+        finishSkinLookup(tr("Imported %1").arg(user));
+    });
 }
 
 bool SkinManageDialog::selectImportedSkin(const QString& path)
@@ -599,7 +607,11 @@ bool SkinManageDialog::selectImportedSkin(const QString& path)
     const auto* filter = qobject_cast<const QSortFilterProxyModel*>(m_ui->listView->model());
     if (!filter)
         return false;
-    m_ui->listView->setCurrentIndex(filter->mapFromSource(m_list.index(row, 0)));
+    const auto index = filter->mapFromSource(m_list.index(row, 0));
+    if (!index.isValid())
+        return false;
+    m_ui->listView->setCurrentIndex(index);
+    m_ui->listView->scrollTo(index);
     return true;
 }
 
