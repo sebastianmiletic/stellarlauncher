@@ -538,6 +538,16 @@ public:
         update();
     }
 
+    void setVersion(const QString& version)
+    {
+        if (m_version != version) {
+            m_version = version;
+            update();
+        }
+    }
+
+    bool hasArtwork() const { return !m_image.isNull(); }
+
     void setArtwork(const QPixmap& image)
     {
         if (image.cacheKey() == m_image.cacheKey())
@@ -1084,10 +1094,13 @@ void StellarGallery::rebuild()
     const int oldOffset = m_scroll->horizontalScrollBar()->value();
     m_slide->stop();
     m_outlineSlide->stop();
+    QHash<QString, GalleryTile*> existing;
     for (auto* tile : std::as_const(m_tiles)) {
         m_row->removeWidget(tile);
-        tile->hide();
-        tile->deleteLater();
+        if (tile != m_accountTile) {
+            auto* card = static_cast<GalleryTile*>(tile);
+            existing.insert(card->instanceId, card);
+        }
     }
     m_tiles.clear();
     m_ids.clear();
@@ -1103,27 +1116,50 @@ void StellarGallery::rebuild()
         const auto title = instance ? instance->name() : tr("Create New Instance");
         auto version = versions.value(id).minecraft;
         const auto path = instance ? artworkPath(id, version) : QString();
-        const auto* thumbnail = instance ? m_thumbnails.object(path) : nullptr;
-        const QPixmap pixmap = thumbnail ? thumbnail->artwork : instance ? wallpaperPlaceholder() : QPixmap();
+        auto* tile = existing.take(id);
         if (instance && version.isEmpty())
             version = tr("Minecraft");
-        auto* tile = new GalleryTile(title, version, pixmap, m_cards);
+        const bool fresh = !tile;
+        if (fresh) {
+            const auto* thumbnail = m_thumbnails.object(path);
+            const QPixmap artwork = thumbnail ? thumbnail->artwork : instance ? wallpaperPlaceholder() : QPixmap();
+            tile = new GalleryTile(title, version, artwork, m_cards);
+            tile->instanceId = id;
+            connect(tile, &QAbstractButton::clicked, this, [this, tile] {
+                const int index = m_tiles.indexOf(tile);
+                if (index >= 0)
+                    activate(index);
+            });
+            tile->installEventFilter(this);
+        } else {
+            tile->setText(title);
+            tile->setAccessibleName(title);
+            tile->setVersion(version);
+        }
         tile->setProperty("wallpaperPath", path);
         tile->setFixedSize(cardWidth(i), windowHeight - gap * 2);
         m_row->addWidget(tile);
         m_tiles.append(tile);
-        tile->open = [this, i] { activate(i); };
-        connect(tile, &QAbstractButton::clicked, this, tile->open);
-        if (instance) {
+        if (instance)
             m_ids.append(id);
-            tile->play = [this, i, id] {
+        if (!fresh)
+            continue;
+        tile->open = [this, tile] {
+            const int index = m_tiles.indexOf(tile);
+            if (index >= 0)
+                activate(index);
+        };
+        if (instance) {
+            tile->play = [this, tile, id] {
+                const int index = m_tiles.indexOf(tile);
+                if (index < 0)
+                    return;
                 dismissPanel();
-                selectIndex(i, false);
+                selectIndex(index, false);
                 openInstance(id);
                 playInstance(id);
             };
         }
-        tile->instanceId = id;
         tile->dragging = [this](bool active) {
             if (active) {
                 m_slide->stop();
@@ -1156,24 +1192,35 @@ void StellarGallery::rebuild()
             m_saveSelection->start();
             QTimer::singleShot(0, this, &StellarGallery::rebuild);
         };
-        tile->options = [this, i](const QPoint& screen) {
-            showActions(i, QRect(mapFromGlobal(screen), QSize(1, 1)));
+        tile->options = [this, tile](const QPoint& screen) {
+            const int index = m_tiles.indexOf(tile);
+            if (index >= 0)
+                showActions(index, QRect(mapFromGlobal(screen), QSize(1, 1)));
         };
-        tile->installEventFilter(this);
     }
-    auto* profile = new GalleryTile(tr("Accounts & Settings"), {}, {}, m_cards);
-    profile->setFixedSize(cardWidth(m_tiles.size()), windowHeight - gap * 2);
-    profile->installEventFilter(this);
-    profile->options = [this](const QPoint&) { showAccounts(); };
-    m_accountTile = profile;
-    m_row->addWidget(profile);
-    m_tiles.append(profile);
-    connect(profile, &QAbstractButton::clicked, this, [this] { activate(m_tiles.size() - 1); });
+    if (!m_accountTile) {
+        auto* profile = new GalleryTile(tr("Accounts & Settings"), {}, {}, m_cards);
+        profile->installEventFilter(this);
+        profile->options = [this](const QPoint&) { showAccounts(); };
+        connect(profile, &QAbstractButton::clicked, this, [this] { activate(m_tiles.size() - 1); });
+        m_accountTile = profile;
+    }
+    m_accountTile->setFixedSize(cardWidth(m_tiles.size()), windowHeight - gap * 2);
+    m_row->addWidget(m_accountTile);
+    m_tiles.append(m_accountTile);
+    for (auto* removed : std::as_const(existing)) {
+        removed->hide();
+        removed->deleteLater();
+    }
     updateAccountIcons();
-    m_cards->setFixedSize(m_row->sizeHint().width(), windowHeight);
-    m_row->activate();
-    for (auto* tile : std::as_const(m_tiles))
+    int rowWidth = gap;
+    for (auto* tile : std::as_const(m_tiles)) {
         tile->show();
+        rowWidth += tile->width() + gap;
+    }
+    m_cards->setFixedSize(rowWidth, windowHeight);
+    m_row->invalidate();
+    m_row->activate();
     m_scroll->horizontalScrollBar()->setValue(oldOffset);
     const int selectedIndex = m_ids.indexOf(m_selected);
     selectIndex(selectedIndex >= 0 ? selectedIndex : 0, false);
@@ -2408,7 +2455,10 @@ void StellarGallery::scheduleThumbnails()
         if (path.isEmpty())
             continue;
         const auto* cached = m_thumbnails.object(path);
-        card->setArtwork(cached ? cached->artwork : wallpaperPlaceholder());
+        if (cached)
+            card->setArtwork(cached->artwork);
+        else if (!card->hasArtwork())
+            card->setArtwork(wallpaperPlaceholder());
         if ((!cached || cached->target != target) && !m_pendingThumbnails.contains(path)) {
             m_pendingThumbnails.insert(path);
             paths.append(path);
@@ -2433,10 +2483,20 @@ void StellarGallery::scheduleThumbnails()
             if (target == m_thumbnailSize || !m_thumbnails.contains(path)) {
                 auto artwork = image.isNull() ? wallpaperPlaceholder() : QPixmap::fromImage(image);
                 const auto cost = image.isNull() ? 1 : pixmapKiB(image);
-                m_thumbnails.insert(path, new Thumbnail{std::move(artwork), target}, cost);
+                m_thumbnails.insert(path, new Thumbnail{artwork, target}, cost);
+                if (target == m_thumbnailSize) {
+                    const int left = m_scroll->horizontalScrollBar()->value() - windowWidth;
+                    const int right = left + 3 * windowWidth;
+                    for (auto* tile : std::as_const(m_tiles)) {
+                        if (tile->geometry().right() >= left && tile->geometry().left() <= right &&
+                            tile->property("wallpaperPath").toString() == path)
+                            static_cast<GalleryTile*>(tile)->setArtwork(artwork);
+                    }
+                }
             }
         }
-        scheduleThumbnails();
+        if (target != m_thumbnailSize)
+            scheduleThumbnails();
     });
 }
 
