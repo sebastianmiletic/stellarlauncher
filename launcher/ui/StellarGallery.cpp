@@ -2047,7 +2047,7 @@ void StellarGallery::updateAccountIcons()
     for (int i = 0; i < instances->count(); ++i)
         played += instances->at(i)->totalTimePlayed();
     static_cast<GalleryTile*>(m_accountTile)->setAccountCard(QPixmap::fromImage(preview),
-        account ? account->displayName() : tr("No account connected"),
+        account ? account->displayName() : tr("Signed out"),
         played ? Time::prettifyDuration(played) : tr("0 min"),
         QLocale().toString(instances->count()));
 }
