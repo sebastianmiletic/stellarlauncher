@@ -26,6 +26,8 @@ public:
         : m_id(std::move(id)), m_label(std::move(label)), m_icon(std::move(icon)),
           m_create(std::move(create)), m_visible(std::move(visible))
     {
+        auto* contents = new QVBoxLayout(this);
+        contents->setContentsMargins(0, 0, 0, 0);
     }
 
     QString id() const override { return m_id; }
@@ -45,9 +47,7 @@ public:
             m_page->setParentContainer(m_container);
             auto* widget = dynamic_cast<QWidget*>(m_page);
             widget->setParent(this);
-            auto* layout = new QVBoxLayout(this);
-            layout->setContentsMargins(0, 0, 0, 0);
-            layout->addWidget(widget);
+            layout()->addWidget(widget);
             widget->show();
         }
         return m_page;

@@ -37,7 +37,10 @@
 #include "InstanceWindow.h"
 #include "Application.h"
 
+#include <QAccessibleWidget>
 #include <QCloseEvent>
+#include <QTableView>
+#include <QTreeView>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPainterPath>
@@ -55,8 +58,58 @@
 
 #include "icons/IconList.h"
 
+#if defined(Q_OS_MACOS) && QT_VERSION < QT_VERSION_CHECK(6, 12, 1)
+namespace {
+// QTBUG-149612: the Cocoa table bridge can free the interface it is querying.
+// On affected versions expose editor tables as keyboard-operable panes.
+class EditorTableAccessibility final : public QAccessibleWidget {
+public:
+    explicit EditorTableAccessibility(QAbstractItemView* view) : QAccessibleWidget(view, QAccessible::Pane) {}
+
+    QString text(QAccessible::Text type) const override
+    {
+        auto* view = static_cast<QAbstractItemView*>(widget());
+        if (type == QAccessible::Name && view->accessibleName().isEmpty())
+            return QObject::tr("Editor items");
+        if (type == QAccessible::Value) {
+            const auto current = view->currentIndex();
+            QStringList fields;
+            if (current.isValid()) {
+                for (int i = 0; i < current.model()->columnCount(current.parent()); ++i) {
+                    const auto label = current.siblingAtColumn(i).data().toString();
+                    if (!label.isEmpty())
+                        fields.append(label);
+                }
+            }
+            return fields.join(", ");
+        }
+        return QAccessibleWidget::text(type);
+    }
+};
+
+QAccessibleInterface* editorTableAccessibility(const QString&, QObject* object)
+{
+    auto* view = qobject_cast<QAbstractItemView*>(object);
+    if (!view || (!qobject_cast<QTreeView*>(view) && !qobject_cast<QTableView*>(view)))
+        return nullptr;
+    for (auto* parent = view->parentWidget(); parent; parent = parent->parentWidget()) {
+        if (qobject_cast<InstanceWindow*>(parent))
+            return new EditorTableAccessibility(view);
+    }
+    return nullptr;
+}
+}
+#endif
+
 InstanceWindow::InstanceWindow(MinecraftInstance* instance, const QString& page, QWidget* parent) : QMainWindow(parent), m_instance(instance)
 {
+#if defined(Q_OS_MACOS) && QT_VERSION < QT_VERSION_CHECK(6, 12, 1)
+    static const auto installed = [] {
+        QAccessible::installFactory(editorTableAccessibility);
+        return true;
+    }();
+    Q_UNUSED(installed);
+#endif
     setAttribute(Qt::WA_DeleteOnClose);
     setWindowFlag(Qt::FramelessWindowHint);
 
