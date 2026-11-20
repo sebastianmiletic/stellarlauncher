@@ -255,6 +255,10 @@ InstanceWindow::InstanceWindow(MinecraftInstance* instance, const QString& page,
 
     placeAbove(parent);
     show();
+    if (parent) {
+        raise();
+        activateWindow();
+    }
 }
 
 void InstanceWindow::placeAbove(QWidget* anchor)

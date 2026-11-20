@@ -2228,6 +2228,7 @@ void StellarGallery::showPreferences()
     });
 #endif
     behavior->addStretch();
+    close->setAutoDefault(false);
     preferences->show();
     preferences->raise();
     preferences->activateWindow();
