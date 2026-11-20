@@ -34,6 +34,10 @@
  */
 
 #include "ExternalResourcesPage.h"
+
+#include <QHBoxLayout>
+#include <QPushButton>
+#include <QToolButton>
 #include "ui/MultiDecorationItemDelegate.h"
 #include "ui/dialogs/CustomMessageBox.h"
 #include "ui_ExternalResourcesPage.h"
@@ -57,7 +61,40 @@ ExternalResourcesPage::ExternalResourcesPage(MinecraftInstance* instance, Resour
 {
     m_ui->setupUi(this);
 
-    m_ui->actionsToolbar->insertSpacer(m_ui->actionViewFolder);
+    m_ui->actionsToolbar->hide();
+    auto* controls = new QHBoxLayout;
+    const auto add = [this, controls](const QString& label, QAction* action) {
+        auto* button = new QPushButton(label, this);
+        button->setToolTip(action->toolTip());
+        button->setEnabled(action->isEnabled());
+        connect(action, &QAction::changed, button, [action, button] { button->setEnabled(action->isEnabled()); });
+        connect(button, &QPushButton::clicked, action, &QAction::trigger);
+        controls->addWidget(button);
+    };
+    add(tr("Browse"), m_ui->actionDownloadItem);
+    add(tr("Add File"), m_ui->actionAddItem);
+    controls->addStretch();
+    add(tr("Enable"), m_ui->actionEnableItem);
+    add(tr("Disable"), m_ui->actionDisableItem);
+    add(tr("Remove"), m_ui->actionRemoveItem);
+    auto* more = new QToolButton(this);
+    more->setText(tr("More"));
+    more->setPopupMode(QToolButton::InstantPopup);
+    auto* menu = new QMenu(more);
+    more->setMenu(menu);
+    connect(menu, &QMenu::aboutToShow, this, [this, menu] {
+        menu->clear();
+        auto* actions = m_ui->actionsToolbar->createContextMenu(menu, tr("More"));
+        for (auto* action : actions->actions()) {
+            if (action->isSeparator())
+                menu->addSeparator();
+            else
+                menu->addAction(action);
+        }
+        actions->deleteLater();
+    });
+    controls->addWidget(more);
+    m_ui->gridLayout->addLayout(controls, 0, 1, 1, 2);
 
     m_filterModel->setDynamicSortFilter(true);
     m_filterModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
@@ -145,15 +182,15 @@ QMenu* ExternalResourcesPage::createPopupMenu()
 void ExternalResourcesPage::showContextMenu(const QPoint& pos)
 {
     auto* menu = m_ui->actionsToolbar->createContextMenu(this, tr("Context menu"));
-    menu->exec(m_ui->treeView->mapToGlobal(pos));
-    delete menu;
+    connect(menu, &QMenu::aboutToHide, menu, &QMenu::deleteLater);
+    menu->popup(m_ui->treeView->viewport()->mapToGlobal(pos));
 }
 
 void ExternalResourcesPage::showHeaderContextMenu(const QPoint& pos)
 {
     auto* menu = m_model->createHeaderContextMenu(m_ui->treeView);
-    menu->exec(m_ui->treeView->mapToGlobal(pos));
-    menu->deleteLater();
+    connect(menu, &QMenu::aboutToHide, menu, &QMenu::deleteLater);
+    menu->popup(m_ui->treeView->header()->mapToGlobal(pos));
 }
 
 void ExternalResourcesPage::openedImpl()
@@ -267,11 +304,10 @@ void ExternalResourcesPage::removeItem()
                "This may be permanent and they will be gone from the folder.\n\n"
                "Are you sure?",
                "", count);
-    } else if (folder) {
-        text = tr("You are about to remove the folder \"%1\".\n"
-                  "This may be permanent and it will be gone from the parent folder.\n\n"
-                  "Are you sure?")
-                   .arg(m_model->at(selection.indexes().at(0).row()).fileinfo().fileName());
+    } else {
+        const auto name = m_model->at(selection.indexes().at(0).row()).fileinfo().fileName();
+        text = folder ? tr("Remove the folder %1 and its contents?").arg(name)
+                      : tr("Remove %1 from this instance?").arg(name);
     }
 
     if (!text.isEmpty()) {
@@ -407,7 +443,8 @@ void ExternalResourcesPage::updateCounts()
     const auto enabledCount = std::ranges::count_if(resources, [](Resource* res) { return res->enabled(); });
 
     if (resources.count() == enabledCount) {
-        m_ui->counts->setText(tr("%1 installed and enabled").arg(resources.count()));
+        m_ui->counts->setText(resources.isEmpty() ? tr("No items installed")
+                                                  : tr("%1 installed and enabled").arg(resources.count()));
     } else {
         m_ui->counts->setText(tr("%1 installed, %2 enabled").arg(resources.count()).arg(enabledCount));
     }

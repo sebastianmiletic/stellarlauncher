@@ -10,7 +10,7 @@ Stellar Launcher is a compact Minecraft Java launcher built on Prism Launcher’
 
 - **Change Minecraft version** in **Edit → Version**. Select the Minecraft component and choose **Change version**. Review compatible mod downloads after the component change. Stellar reports missing and locked mods so you can review them before launching.
 - **Play Minecraft** by opening an instance and selecting **Play**. To link an account, use **Minecraft Accounts → Add Microsoft**. Stellar installs Java and Minecraft directly. Open a saved world from **Edit → Worlds** or **Singleplayer** in Minecraft.
-- **Stellar Look** adds a fixed black-hole scene with an animated accretion disk on Java 26.3 and grayscale menus to Minecraft Java 1.21.9 through 26.3. Stellar enables the title screen on the first launch of each supported instance. To enable it again, use **Mods, Packs & Shaders → Enable Stellar title screen**.
+- **Stellar Look** adds a fixed black-hole scene with an animated accretion disk on Java 26.3 and grayscale menus to Minecraft Java 1.21.9 through 26.3. Stellar enables the title screen on the first launch of each supported instance. To enable it again, use **Edit → Stellar Tools → Enable Stellar title screen**.
 - **Updates** use Sparkle on macOS. Stellar checks in the background on startup when automatic updates are enabled. Updates are installed from signed releases. Release builds without a configured Sparkle key and feed use manual downloads from GitHub.
 
 ## Install
@@ -35,7 +35,7 @@ The approval requirement applies to both browser and QR/device-code sign-in. Bro
 
 ## In-game tools
 
-For a **Minecraft Java 26.3** instance with **Fabric Loader 0.19.5 or later**, open **Mods, Packs & Shaders → Install in-game tools**. The **Stellar** button appears on Minecraft's title and pause menus.
+For a **Minecraft Java 26.3** instance with **Fabric Loader 0.19.5 or later**, open **Edit → Stellar Tools → Install in-game tools**. The **Stellar** button appears on Minecraft's title and pause menus.
 
 - **Mods** searches Modrinth for Fabric projects matching the current Minecraft version. It also enables and disables installed mod files. Changes take effect after restarting Minecraft.
 - **Shaders** browses Modrinth shader packs and opens the live shader picker when a compatible version of Iris is installed. Search results open their Modrinth project pages.
@@ -55,7 +55,7 @@ The gallery shows up to three instances across, with each card taking the full w
 
 Drag cards into your preferred order. Use **General settings → Mod Settings** to filter the library by loader. In the same menu on macOS, **Deduplicate identical mods** lets APFS share the storage blocks of matching enabled JARs while keeping each instance independent. Folder imports use the same optimization. Before launching, Stellar warns about recognizable wrong-loader JARs and incompatible Minecraft or Fabric Loader requirements from Fabric metadata.
 
-Click a wallpaper card once to open details, or double-click to launch directly. Right-click a card for Play, Edit Instance, Mods, Packs & Shaders, and wallpaper options. The content manager can add local files or browse compatible Modrinth projects. Use the arrow keys to select an instance or the create tile, Return to open it or play from instance details, Shift-F10 for options, and Escape to dismiss the panel.
+Click a wallpaper card once to open details, or double-click to launch directly. Right-click an instance and choose **Edit**. Open **Mods**, **Resource Packs** (called **Texture Packs** in older versions), or **Shaders**. Use **Browse** or **Add File** to install content. Select an item to enable, disable, or remove it. Update, version, and folder actions are under **More**. The editor header has wallpaper and Stellar tools. Each instance can launch independently. The running instance’s Play control becomes **Running · Stop…**. Use the arrow keys to select an instance or the create tile, Return to open it or play from instance details, Shift-F10 for options, and Escape to dismiss the panel.
 
 Stellar matches installed Java releases to official artwork where Minecraft publishes a matching collection. Open **Change Wallpaper** from an instance and select **Animated GIFs** to import local GIFs (up to 64 MB and 4096 pixels per side). The chooser previews still images and GIFs. Animated wallpapers pause when Stellar is hidden, minimized or in the background. Turn on **Shuffle this collection** to choose a wallpaper each time you open an instance. The library uses still previews, and disabling motion also pauses GIF playback when opening details.
 

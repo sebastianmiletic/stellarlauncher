@@ -38,11 +38,11 @@ inline bool hasSupportedTitle(const QString& version)
     return suffix == version.size() && release >= QVersionNumber(1, 21, 9) && release <= QVersionNumber(26, 3);
 }
 
-inline Result<> updateBundledFile(const QString& target, const QString& resource, const QByteArray& previousHash)
+inline Result<> updateBundledFile(const QString& target, const QString& resource, const QList<QByteArray>& previousHashes)
 {
     if (QFile::exists(target)) {
         TRY_INTO(const auto current, FS::read(target))
-        if (QCryptographicHash::hash(current, QCryptographicHash::Sha256).toHex() != previousHash)
+        if (!previousHashes.contains(QCryptographicHash::hash(current, QCryptographicHash::Sha256).toHex()))
             return {};
     }
     TRY_INTO(const auto bundled, FS::read(resource))
@@ -60,7 +60,8 @@ inline Result<> prepareTitle(MinecraftInstance* instance, bool manual = false)
     const auto target = game.filePath("resourcepacks/Stellar Look.zip");
     if (manual || QFile::exists(target) || !QFile::exists(marker)) {
         TRY(updateBundledFile(target, ":/archive-look.zip",
-            "e136389352707b6605e5e2c701a7a10976122aa22d18418f42f6b9d7c5888b6a"))
+            { "e136389352707b6605e5e2c701a7a10976122aa22d18418f42f6b9d7c5888b6a",
+              "3965a851732038c028bc04526a29a389221e6528f63688511d2d5cbc6275661e" }))
     }
     if (!manual && QFile::exists(marker))
         return {};
@@ -107,6 +108,6 @@ inline Result<> installTools(MinecraftInstance* instance)
     if (QFile::exists(disabled) && !QFile::exists(target) && !QFile::rename(disabled, target))
         return std::unexpected(QStringLiteral("Could not enable the installed Stellar Client mod."));
     return updateBundledFile(target, ":/stellar-client.jar",
-        "e3a44ad86c710e1c2c0b42912f6c9febca327d3f7927218a57c8dadef0de4d59");
+        { "e3a44ad86c710e1c2c0b42912f6c9febca327d3f7927218a57c8dadef0de4d59" });
 }
 }

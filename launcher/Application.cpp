@@ -1889,7 +1889,7 @@ InstanceWindow* Application::showInstanceWindow(MinecraftInstance* instance, con
         window->raise();
         window->activateWindow();
     } else {
-        window = new InstanceWindow(instance);
+        window = new InstanceWindow(instance, page);
         m_openWindows++;
         connect(window, &InstanceWindow::isClosing, this, [this, instance] {
             instance->setWindow(nullptr);

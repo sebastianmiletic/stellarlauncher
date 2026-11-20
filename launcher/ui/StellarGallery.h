@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <QCache>
 #include <QElapsedTimer>
 #include <QHash>
 #include <QSet>
@@ -18,9 +19,13 @@ class QPropertyAnimation;
 class QScrollArea;
 class QTimer;
 class MinecraftInstance;
+class Task;
 
 class StellarGallery : public QWidget {
 public:
+    static constexpr QSize windowSize{818, 414};
+    static constexpr int cornerRadius = 17;
+
     struct Actions {
         std::function<void()> create;
         std::function<void(const QString&)> importPack;
@@ -52,16 +57,19 @@ private:
     void activate(int index);
     void openInstance(const QString& id, int direction = 0);
     void closeInstance();
+    void activatePlay(const QString& id);
+    void showStop(const QString& id);
     void playInstance(const QString& id);
     void launchChecked(const QString& id);
     void refreshInstance();
-    void finishLaunch();
+    void editInstance(const QString& id);
     void showActions(int index, QRect anchor = {});
     void showPreferences();
     void showModSettings();
     void showAccounts();
     void updateAccountIcons();
     void showCreator();
+    void showCreationProgress();
     void showContent(const QString& id);
     void showImport();
     void previewImport(const QString& source);
@@ -95,8 +103,8 @@ private:
     QPointer<QWidget> m_detailSlide;
     QList<QAbstractButton*> m_tiles;
     QList<Collection> m_collections;
-    QHash<QString, QPixmap> m_artwork;
-    QHash<QString, QPixmap> m_thumbnails;
+    QCache<QString, QPixmap> m_artwork{4};
+    QCache<QString, QPixmap> m_thumbnails{24};
     QSet<QString> m_pendingThumbnails;
     QSet<QString> m_fetching;
     QSet<QString> m_attempted;
@@ -105,10 +113,12 @@ private:
     QString m_selected;
     QString m_detailId;
     QString m_detailWallpaper;
-    QString m_launching;
-    QString m_preflight;
+    QString m_detailArtworkPath;
+    bool m_detailDecoding = false;
+    QHash<QString, QElapsedTimer> m_launches;
+    QSet<QString> m_preflight;
+    QPointer<Task> m_creation;
     QString m_wallpapers;
-    QElapsedTimer m_javaStartup;
     int m_index = 0;
     bool m_opened = false;
     bool m_dragging = false;

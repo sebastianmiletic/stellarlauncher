@@ -541,7 +541,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     setFixedSize(gallery->size());
     setCentralWidget(gallery);
     QPainterPath outline;
-    outline.addRoundedRect(rect(), 17, 17);
+    outline.addRoundedRect(rect(), StellarGallery::cornerRadius, StellarGallery::cornerRadius);
     setMask(QRegion(outline.toFillPolygon().toPolygon()));
     gallery->setFocus();
 

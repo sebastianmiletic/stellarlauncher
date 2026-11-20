@@ -36,6 +36,8 @@
 
 #pragma once
 
+#include <functional>
+
 #include <QMainWindow>
 #include <QSystemTrayIcon>
 #include <QToolButton>
@@ -53,7 +55,7 @@ class InstanceWindow : public QMainWindow, public BasePageContainer {
     Q_OBJECT
 
    public:
-    explicit InstanceWindow(MinecraftInstance* proc, QWidget* parent = 0);
+    explicit InstanceWindow(MinecraftInstance* instance, const QString& page = {}, QWidget* parent = nullptr);
     virtual ~InstanceWindow() = default;
 
     bool selectPage(QString pageId) override;
@@ -63,6 +65,7 @@ class InstanceWindow : public QMainWindow, public BasePageContainer {
     QString instanceId();
 
     // save all settings and changes (prepare for launch)
+    void setStellarActions(std::function<void()> wallpaper, std::function<void()> tools);
     bool saveAll();
 
     // request closing the window (from a page)
@@ -89,6 +92,8 @@ class InstanceWindow : public QMainWindow, public BasePageContainer {
     bool m_doNotSave = false;
     bool m_restartQueued = false;
     PageContainer* m_container = nullptr;
+    QPushButton* m_wallpaperButton = nullptr;
+    QPushButton* m_toolsButton = nullptr;
     QPushButton* m_closeButton = nullptr;
     QToolButton* m_launchButton = nullptr;
     QPushButton* m_restartButton = nullptr;

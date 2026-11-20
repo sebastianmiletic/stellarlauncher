@@ -16,7 +16,6 @@
 #include <QDynamicPropertyChangeEvent>
 #include <QFileDialog>
 #include <QFrame>
-#include <QGraphicsOpacityEffect>
 #include <QImageReader>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -29,7 +28,7 @@
 #include <QPointer>
 #include <QListWidget>
 #include <QMouseEvent>
-#include <QMovie>
+#include <QThreadPool>
 #include <QRandomGenerator>
 #include <QUuid>
 #include <QNetworkAccessManager>
@@ -51,10 +50,12 @@
 #include <QtConcurrentRun>
 #include <algorithm>
 #include <cmath>
+#include <memory>
 
 #include <utility>
 
 #include "Application.h"
+#include "ui/InstanceWindow.h"
 #include "FileSystem.h"
 #include "InstanceList.h"
 #include "MMCTime.h"
@@ -70,11 +71,10 @@
 #include "meta/Index.h"
 #include "meta/Version.h"
 #include "minecraft/VanillaInstanceCreationTask.h"
-#include "ui/dialogs/ProgressDialog.h"
 
 namespace {
-constexpr int windowWidth = 818;
-constexpr int windowHeight = 414;
+constexpr int windowWidth = StellarGallery::windowSize.width();
+constexpr int windowHeight = StellarGallery::windowSize.height();
 constexpr int gap = 5;
 const QColor canvas("#141416");
 
@@ -122,6 +122,27 @@ bool motionEnabled()
     return APPLICATION->settings()->get("StellarMotion").toBool();
 }
 
+QThreadPool* wallpaperPool()
+{
+    static auto* pool = [] {
+        auto* worker = new QThreadPool(qApp);
+        worker->setMaxThreadCount(2);
+        worker->setExpiryTimeout(3000);
+        return worker;
+    }();
+    return pool;
+}
+
+QImage readWallpaper(const QString& path, const QSize& bounds)
+{
+    QImageReader reader(path);
+    reader.setAutoTransform(true);
+    const auto size = reader.size();
+    if (size.isValid())
+        reader.setScaledSize(size.boundedTo(size.scaled(bounds, Qt::KeepAspectRatio)));
+    return reader.read();
+}
+
 class WallpaperPlayback final : public QObject {
 public:
     explicit WallpaperPlayback(QWidget* host) : QObject(host), m_host(host)
@@ -129,36 +150,46 @@ public:
         host->installEventFilter(this);
         if (host->window() != host)
             host->window()->installEventFilter(this);
+        m_timer.setSingleShot(true);
+        connect(&m_timer, &QTimer::timeout, this, [this] { readFrame(); });
         connect(qApp, &QGuiApplication::applicationStateChanged, this, [this] { sync(); });
-        connect(&movie, &QMovie::finished, this, [this] { sync(); });
     }
 
     void setFile(const QString& path, const QSize& target)
     {
-        if (movie.fileName() == path)
+        const auto animated = path.endsWith(".gif", Qt::CaseInsensitive) ? path : QString();
+        if (m_path == animated)
             return;
-        movie.stop();
-        movie.setFileName(QString());
-        if (!path.endsWith(".gif", Qt::CaseInsensitive) || QFileInfo(path).size() > 64 * 1024 * 1024)
-            return;
-        const auto size = QImageReader(path, "gif").size();
-        if (!size.isValid() || size.width() > 4096 || size.height() > 4096)
-            return;
-        movie.setFileName(path);
-        movie.setScaledSize(size.boundedTo(size.scaled(target, Qt::KeepAspectRatio)));
+        m_path = animated;
+        m_frame = {};
+        m_decoder.reset();
+        m_timer.stop();
+        if (!animated.isEmpty())
+            m_decoder = std::make_shared<Decoder>(animated, target);
         sync();
     }
 
-    QMovie movie;
+    void setSuspended(bool suspended)
+    {
+        if (m_suspended != suspended) {
+            m_suspended = suspended;
+            sync();
+        }
+    }
+
+    const QPixmap& currentPixmap() const { return m_frame; }
+    std::function<void()> frameChanged;
 
 protected:
     bool eventFilter(QObject*, QEvent* event) override
     {
         switch (event->type()) {
         case QEvent::Hide:
-            movie.setPaused(true);
+        case QEvent::WindowDeactivate:
+            m_timer.stop();
             break;
         case QEvent::Show:
+        case QEvent::WindowActivate:
         case QEvent::WindowStateChange:
             QTimer::singleShot(0, this, [this] { sync(); });
             break;
@@ -169,22 +200,85 @@ protected:
     }
 
 private:
+    struct Decoder {
+        Decoder(QString filename, QSize target) : path(std::move(filename)), bounds(target), reader(path, "gif") {}
+        QString path;
+        QSize bounds;
+        QImageReader reader;
+        bool initialized = false;
+        bool hadFrame = false;
+    };
+
+    struct Frame {
+        QImage image;
+        int delay = 100;
+    };
+
+    bool active() const
+    {
+        return !m_suspended && motionEnabled() && m_host->isVisible() && !m_host->window()->isMinimized()
+            && m_host->window()->isActiveWindow() && QGuiApplication::applicationState() == Qt::ApplicationActive;
+    }
+
     void sync()
     {
-        if (movie.fileName().isEmpty())
-            return;
-        const bool visible = motionEnabled() && m_host->isVisible() && !m_host->window()->isMinimized()
-            && QGuiApplication::applicationState() == Qt::ApplicationActive;
-        if (!visible) {
-            movie.setPaused(true);
-        } else if (movie.state() == QMovie::Paused) {
-            movie.setPaused(false);
-        } else if (movie.state() == QMovie::NotRunning) {
-            movie.start();
+        if (!m_decoder || !active()) {
+            m_timer.stop();
+        } else if (!m_timer.isActive() && !m_pending) {
+            m_timer.start(0);
         }
     }
 
+    void readFrame()
+    {
+        if (!m_decoder || !active() || m_pending)
+            return;
+        m_pending = true;
+        auto work = m_decoder;
+        QtConcurrent::run(wallpaperPool(), [work]() -> Frame {
+            const auto configure = [&work] {
+                const auto size = work->reader.size();
+                if (QFileInfo(work->path).size() > 64 * 1024 * 1024 || !size.isValid() ||
+                    size.width() > 4096 || size.height() > 4096)
+                    return false;
+                work->reader.setScaledSize(size.boundedTo(size.scaled(work->bounds, Qt::KeepAspectRatio)));
+                return true;
+            };
+            if (!work->initialized) {
+                work->initialized = true;
+                if (!configure())
+                    return {};
+            }
+            auto image = work->reader.read();
+            if (image.isNull() && work->hadFrame) {
+                work->reader.setFileName(work->path);
+                if (configure())
+                    image = work->reader.read();
+            }
+            work->hadFrame = !image.isNull();
+            return {std::move(image), qMax(34, work->reader.nextImageDelay())};
+        }).then(this, [this, work](const Frame& frame) {
+            m_pending = false;
+            if (work != m_decoder) {
+                sync();
+            } else if (frame.image.isNull()) {
+                m_decoder.reset();
+            } else if (active()) {
+                m_frame = QPixmap::fromImage(frame.image);
+                if (frameChanged)
+                    frameChanged();
+                m_timer.start(frame.delay);
+            }
+        });
+    }
+
     QWidget* m_host;
+    QTimer m_timer;
+    std::shared_ptr<Decoder> m_decoder;
+    QPixmap m_frame;
+    QString m_path;
+    bool m_pending = false;
+    bool m_suspended = false;
 };
 
 class ButtonFeedback final : public QObject {
@@ -421,7 +515,13 @@ public:
         update();
     }
 
-    void setArtwork(const QPixmap& image) { m_image = image; update(); }
+    void setArtwork(const QPixmap& image)
+    {
+        if (image.cacheKey() == m_image.cacheKey())
+            return;
+        m_image = image;
+        update();
+    }
     std::function<void(const QPoint&)> options;
     std::function<void()> open;
     std::function<void()> play;
@@ -657,13 +757,15 @@ public:
         m_wave.setStartValue(0.0);
         m_wave.setEndValue(1.0);
         connect(&m_wave, &QVariantAnimation::valueChanged, this, [this] { update(); });
-        connect(&m_playback->movie, &QMovie::frameChanged, this, [this] { update(); });
+        m_playback->frameChanged = [this] { update(); };
     }
 
     void setWallpaperFile(const QString& path)
     {
-        m_playback->setFile(motionEnabled() ? path : QString(), QSize(1400, 800));
+        m_playback->setFile(motionEnabled() ? path : QString(), QSize(1000, 600));
     }
+
+    void suspendWallpaper(bool suspended) { m_playback->setSuspended(suspended); }
 
     void setInstance(const QString& name, const QString& info, const QPixmap& wallpaper)
     {
@@ -677,10 +779,12 @@ public:
         }
     }
 
-    void setLaunchState(const QString& text, bool busy, bool animate, int progress = -1)
+    void setLaunchState(const QString& text, bool busy, bool animate, int progress = -1, bool canStop = false)
     {
-        m_play->setText(text);
-        m_play->setEnabled(!busy);
+        if (m_play->text() != text)
+            m_play->setText(text);
+        m_play->setEnabled(!busy || canStop);
+        m_play->setToolTip(canStop ? tr("Stop Minecraft") : QString());
         static const QIcon playIcon(":/icons/flat/scalable/launch.svg");
         if (busy && !m_play->icon().isNull())
             m_play->setIcon(QIcon());
@@ -755,8 +859,8 @@ protected:
             drawArtwork(painter, hero, m_wallpaper);
             painter.restore();
         } else {
-            drawArtwork(painter, hero, m_playback->movie.currentPixmap().isNull() || m_playback->movie.fileName().isEmpty()
-                ? m_wallpaper : m_playback->movie.currentPixmap());
+            const auto& frame = m_playback->currentPixmap();
+            drawArtwork(painter, hero, frame.isNull() ? m_wallpaper : frame);
         }
         QLinearGradient shade(0, hero.bottom() - 98, 0, hero.bottom() + 1);
         shade.setColorAt(0, QColor(20, 20, 22, 0));
@@ -826,6 +930,11 @@ StellarGallery::StellarGallery(Actions actions, QWidget* parent)
     m_outlineSlide = new QPropertyAnimation(m_outline, "geometry", this);
     m_outlineSlide->setDuration(195);
     m_outlineSlide->setEasingCurve(QEasingCurve::OutCubic);
+    auto* thumbnailTimer = new QTimer(this);
+    thumbnailTimer->setSingleShot(true);
+    thumbnailTimer->setInterval(70);
+    connect(m_scroll->horizontalScrollBar(), &QScrollBar::valueChanged, this, [thumbnailTimer] { thumbnailTimer->start(); });
+    connect(thumbnailTimer, &QTimer::timeout, this, &StellarGallery::scheduleThumbnails);
     auto* preferences = new QShortcut(QKeySequence(QStringLiteral("Ctrl+,")), this);
     connect(preferences, &QShortcut::activated, this, &StellarGallery::showPreferences);
     auto* create = new QShortcut(QKeySequence::New, this);
@@ -883,11 +992,21 @@ StellarGallery::StellarGallery(Actions actions, QWidget* parent)
 
     m_selected = APPLICATION->settings()->get("SelectedInstance").toString();
     auto* list = APPLICATION->instances();
-    connect(list, &QAbstractItemModel::modelReset, this, &StellarGallery::rebuild);
-    connect(list, &QAbstractItemModel::rowsInserted, this, &StellarGallery::rebuild);
-    connect(list, &QAbstractItemModel::rowsRemoved, this, &StellarGallery::rebuild);
-    connect(list, &QAbstractItemModel::dataChanged, this, &StellarGallery::rebuild);
-    connect(list, &InstanceList::instanceSelectRequest, this, &StellarGallery::selectInstance);
+    auto* refresh = new QTimer(this);
+    refresh->setSingleShot(true);
+    refresh->setInterval(0);
+    const auto queueRefresh = [refresh] { refresh->start(); };
+    connect(refresh, &QTimer::timeout, this, &StellarGallery::rebuild);
+    connect(list, &QAbstractItemModel::modelReset, this, queueRefresh);
+    connect(list, &QAbstractItemModel::rowsInserted, this, queueRefresh);
+    connect(list, &QAbstractItemModel::rowsRemoved, this, queueRefresh);
+    connect(list, &QAbstractItemModel::dataChanged, this, queueRefresh);
+    connect(list, &InstanceList::instanceSelectRequest, this, [this](const QString& id) {
+        if (m_ids.contains(id))
+            selectInstance(id);
+        else
+            m_selected = id;
+    });
     rebuild();
 }
 
@@ -942,7 +1061,8 @@ void StellarGallery::rebuild()
         const auto title = instance ? instance->name() : tr("Create New Instance");
         auto version = versions.value(id).minecraft;
         const auto path = instance ? artworkPath(id, version) : QString();
-        auto pixmap = instance ? m_thumbnails.value(path) : QPixmap();
+        const auto* thumbnail = instance ? m_thumbnails.object(path) : nullptr;
+        const auto pixmap = thumbnail ? *thumbnail : QPixmap();
         if (instance && version.isEmpty())
             version = tr("Minecraft");
         auto* tile = new GalleryTile(title, version, pixmap, m_cards);
@@ -1107,22 +1227,11 @@ void StellarGallery::openInstance(const QString& id, int direction)
     }
     if (!m_detail) {
         auto* detail = new InstanceDetail(this, [this] { closeInstance(); },
-                                         [this] { playInstance(m_detailId); },
+                                         [this] { activatePlay(m_detailId); },
                                          [this] { showActions(m_ids.indexOf(m_detailId)); });
         detail->setGeometry(rect());
         detail->installEventFilter(this);
         m_detail = detail;
-        if (motionEnabled()) {
-            auto* effect = new QGraphicsOpacityEffect(detail);
-            detail->setGraphicsEffect(effect);
-            auto* transition = new QPropertyAnimation(effect, "opacity", detail);
-            transition->setDuration(155);
-            transition->setStartValue(0.58);
-            transition->setEndValue(1.0);
-            transition->setEasingCurve(QEasingCurve::OutCubic);
-            connect(transition, &QPropertyAnimation::finished, detail, [detail] { detail->setGraphicsEffect(nullptr); });
-            transition->start(QAbstractAnimation::DeleteWhenStopped);
-        }
     }
     m_detailWallpaper.clear();
     const auto shuffle = APPLICATION->settings()->get("StellarWallpaperShuffle").toMap().value(id).toString();
@@ -1147,10 +1256,12 @@ void StellarGallery::closeInstance()
     delete m_detailSlide.data();
     disconnect(m_detailRunningChanged);
     m_detailId.clear();
+    m_detailArtworkPath.clear();
     if (auto* detail = std::exchange(m_detail, nullptr)) {
         detail->hide();
         detail->deleteLater();
         m_scroll->show();
+        scheduleThumbnails();
     }
     setFocus();
 }
@@ -1168,6 +1279,7 @@ void StellarGallery::refreshInstance()
     const auto played = instance->totalTimePlayed();
     info.append(played > 0 ? tr("%1 played").arg(Time::prettifyDuration(played)) : tr("Never played"));
     const auto path = m_detailWallpaper.isEmpty() ? artworkPath(instance->id(), version.minecraft) : m_detailWallpaper;
+    m_detailArtworkPath = path;
     detail->setInstance(instance->name(), info.join(QStringLiteral("  ·  ")), wallpaperPixmap(path));
     detail->setWallpaperFile(path);
     updateLaunch();
@@ -1176,7 +1288,7 @@ void StellarGallery::refreshInstance()
 void StellarGallery::playInstance(const QString& id)
 {
     auto* instance = APPLICATION->instances()->getInstanceById(id);
-    if (!instance || !m_launching.isEmpty())
+    if (!instance || m_launches.contains(id) || m_preflight.contains(id))
         return;
 
     if (!instance->canLaunch()) {
@@ -1184,14 +1296,14 @@ void StellarGallery::playInstance(const QString& id)
         return;
     }
 
-    if (!m_preflight.isEmpty())
-        return;
-    m_preflight = id;
+    m_preflight.insert(id);
+    updateLaunch();
     const QDir mods(QDir(instance->gameRoot()).filePath("mods"));
     const auto versions = StellarClient::versions(instance);
     QtConcurrent::run([mods, versions] { return StellarMods::incompatible(mods, versions); })
         .then(this, [this, id](const QStringList& issues) {
-            m_preflight.clear();
+            m_preflight.remove(id);
+            updateLaunch();
             if (issues.isEmpty()) {
                 launchChecked(id);
                 return;
@@ -1216,39 +1328,50 @@ void StellarGallery::playInstance(const QString& id)
         });
 }
 
+void StellarGallery::activatePlay(const QString& id)
+{
+    if (auto* instance = APPLICATION->instances()->getInstanceById(id); instance && instance->isRunning()) {
+        showStop(id);
+        return;
+    }
+    playInstance(id);
+}
+
+void StellarGallery::showStop(const QString& id)
+{
+    const auto* instance = APPLICATION->instances()->getInstanceById(id);
+    if (!instance || !instance->isRunning())
+        return;
+    auto* panel = makePanel(tr("Stop Minecraft?"));
+    panel->setFixedWidth(326);
+    auto* message = new QLabel(tr("Force stop %1? Unsaved progress might be lost.").arg(instance->name()), panel);
+    message->setWordWrap(true);
+    panel->layout()->addWidget(message);
+    auto* stop = new GalleryButton(tr("Force Stop"), panel);
+    panel->layout()->addWidget(stop);
+    connect(stop, &QPushButton::clicked, panel, [this, id] {
+        dismissPanel();
+        if (auto* running = APPLICATION->instances()->getInstanceById(id); running && running->isRunning())
+            APPLICATION->kill(running);
+    });
+    placePanel();
+}
+
 void StellarGallery::launchChecked(const QString& id)
 {
     auto* instance = APPLICATION->instances()->getInstanceById(id);
-    if (!instance || !m_launching.isEmpty())
+    if (!instance || !instance->canLaunch() || m_launches.contains(id))
         return;
-    m_launching = id;
-    m_javaStartup.invalidate();
+    m_launches.insert(id, QElapsedTimer{});
     instance->setProperty("stellarLaunchState", "preparing");
     instance->setProperty("stellarGalleryFullscreen", APPLICATION->settings()->get("StellarFillScreen"));
-    if (m_detailId == id)
-        static_cast<InstanceDetail*>(m_detail)->setLaunchState(tr("Preparing…"), true,
-            motionEnabled() &&
-            APPLICATION->settings()->get("StellarLaunchAnimation").toString() != "off");
-    if (!APPLICATION->launch(instance)) {
-        finishLaunch();
-        return;
+    if (APPLICATION->launch(instance)) {
+        instance->installEventFilter(this);
+        m_launchTimer->start();
+    } else {
+        m_launches.remove(id);
     }
-    instance->installEventFilter(this);
-    m_launchTimer->start();
-}
-
-void StellarGallery::finishLaunch()
-{
-    m_launchTimer->stop();
-    if (auto* launching = APPLICATION->instances()->getInstanceById(m_launching))
-        launching->removeEventFilter(this);
-    m_launching.clear();
-    m_javaStartup.invalidate();
-    if (m_detail) {
-        const auto* instance = APPLICATION->instances()->getInstanceById(m_detailId);
-        const bool running = instance && instance->isRunning();
-        static_cast<InstanceDetail*>(m_detail)->setLaunchState(running ? tr("Running") : tr("Play"), running, false);
-    }
+    updateLaunch();
 }
 
 void StellarGallery::keyPressEvent(QKeyEvent* event)
@@ -1280,7 +1403,7 @@ void StellarGallery::keyPressEvent(QKeyEvent* event)
     case Qt::Key_Enter:
         if (!event->isAutoRepeat()) {
             if (m_detail)
-                playInstance(m_detailId);
+                activatePlay(m_detailId);
             else
                 activate(m_index);
         }
@@ -1299,7 +1422,7 @@ void StellarGallery::keyPressEvent(QKeyEvent* event)
 
 bool StellarGallery::eventFilter(QObject* object, QEvent* event)
 {
-    if (event->type() == QEvent::DynamicPropertyChange && !m_launching.isEmpty()) {
+    if (event->type() == QEvent::DynamicPropertyChange && !m_launches.isEmpty()) {
         const auto* change = static_cast<QDynamicPropertyChangeEvent*>(event);
         if (change->propertyName() == "stellarLaunchState" && object->property("stellarLaunchState").toString() == "ready")
             updateLaunch();
@@ -1398,19 +1521,9 @@ void StellarGallery::placePanel(const QRect& anchor, bool alignRight)
     m_panel->move(position);
     m_panel->show();
     m_panel->raise();
-    if (motionEnabled()) {
-        auto* panel = m_panel;
-        auto* opacity = new QGraphicsOpacityEffect(panel);
-        opacity->setOpacity(0.75);
-        panel->setGraphicsEffect(opacity);
-        auto* entrance = new QPropertyAnimation(opacity, "opacity", panel);
-        entrance->setDuration(135);
-        entrance->setEasingCurve(QEasingCurve::OutCubic);
-        entrance->setStartValue(0.75);
-        entrance->setEndValue(1.0);
-        connect(entrance, &QPropertyAnimation::finished, panel, [panel] { panel->setGraphicsEffect(nullptr); });
-        entrance->start(QAbstractAnimation::DeleteWhenStopped);
-    }
+    if (m_detail)
+        static_cast<InstanceDetail*>(m_detail)->suspendWallpaper(true);
+
 }
 
 void StellarGallery::dismissPanel()
@@ -1418,6 +1531,8 @@ void StellarGallery::dismissPanel()
     if (auto* panel = std::exchange(m_panel, nullptr)) {
         panel->hide();
         panel->deleteLater();
+        if (m_detail)
+            static_cast<InstanceDetail*>(m_detail)->suspendWallpaper(false);
         setFocus();
     }
 }
@@ -1432,51 +1547,30 @@ void StellarGallery::showActions(int index, QRect anchor)
     const auto id = m_ids.value(index);
     auto* instance = APPLICATION->instances()->getInstanceById(id);
     auto* panel = makePanel(instance ? instance->name() : tr("Library"));
-    auto* actions = new QGridLayout;
-    actions->setSpacing(7);
-    int count = 0;
-    const auto add = [this, panel, actions, &count](const QString& title, const QString& icon, std::function<void()> action) {
-        const QIcon artwork(QStringLiteral(":/icons/flat_white/scalable/%1.svg").arg(icon));
-        auto* button = new GalleryButton(artwork, QString(), panel);
-        button->setIconSize(QSize(17, 17));
-        button->setAccessibleName(title);
-        button->setToolTip(title);
-        button->setFixedSize(62, 36);
-        actions->addWidget(button, count / 4, count % 4);
-        ++count;
-        connect(button, &QPushButton::clicked, this, [this, action = std::move(action)] {
+    panel->setFixedWidth(210);
+    const auto add = [this, panel](const QString& title, std::function<void()> action) {
+        auto* button = new GalleryButton(title, panel);
+        panel->layout()->addWidget(button);
+        connect(button, &QPushButton::clicked, panel, [this, action = std::move(action)] {
             dismissPanel();
             action();
         });
     };
 
     if (instance) {
-        add(tr("Play"), "launch", [this, id] {
-            if (m_ids.contains(id)) {
+        if (instance->isRunning())
+            add(tr("Stop Minecraft"), [this, id] { showStop(id); });
+        else
+            add(tr("Play"), [this, id] {
                 openInstance(id);
                 playInstance(id);
-            }
-        });
-        add(tr("Edit Instance"), "instance-settings", [id] {
-            if (auto* current = APPLICATION->instances()->getInstanceById(id))
-                APPLICATION->showInstanceWindow(current, "version");
-        });
-        add(tr("Mods, Packs & Shaders"), "loadermods", [this, id] { showContent(id); });
-        add(tr("Minecraft Accounts"), "accounts", [this] { showAccounts(); });
-        add(tr("Change Skin"), "minecraft", m_actions.skins);
-        add(tr("Show Instance Folder"), "viewfolder", [id] {
-            if (const auto* current = APPLICATION->instances()->getInstanceById(id))
-                QDesktopServices::openUrl(QUrl::fromLocalFile(current->instanceRoot()));
-        });
-        add(tr("Change Wallpaper"), "screenshots", [this, id] { showWallpapers(id); });
+            });
+        add(tr("Edit"), [this, id] { editInstance(id); });
     } else {
-        add(tr("Create New Instance"), "new", [this] { showCreator(); });
-        add(tr("Import Instance"), "export", [this] { showImport(); });
-        add(tr("Minecraft Accounts"), "accounts", [this] { showAccounts(); });
-        add(tr("Wallpapers"), "screenshots", [this] { showWallpapers({}); });
+        add(tr("Create Instance"), [this] { showCreator(); });
+        add(tr("Import Instance"), [this] { showImport(); });
+        add(tr("Wallpapers"), [this] { showWallpapers({}); });
     }
-    add(tr("Settings"), "settings", [this] { showPreferences(); });
-    panel->layout()->addItem(actions);
     if (!anchor.isValid()) {
         if (m_detail) {
             anchor = QRect(width() - 95, height() - 57, 42, 36);
@@ -1490,23 +1584,34 @@ void StellarGallery::showActions(int index, QRect anchor)
     placePanel(anchor, m_detail && anchor.width() > 1);
 }
 
+void StellarGallery::editInstance(const QString& id)
+{
+    auto* instance = APPLICATION->instances()->getInstanceById(id);
+    if (!instance)
+        return;
+    auto* editor = APPLICATION->showInstanceWindow(instance, "version");
+    const auto returnToLibrary = [gallery = QPointer(this), editor = QPointer(editor)](auto show) {
+        if (gallery && editor && editor->close()) {
+            gallery->window()->raise();
+            gallery->window()->activateWindow();
+            show(gallery.data());
+        }
+    };
+    editor->setStellarActions(
+        [returnToLibrary, id] { returnToLibrary([id](auto* gallery) { gallery->showWallpapers(id); }); },
+        [returnToLibrary, id] { returnToLibrary([id](auto* gallery) { gallery->showContent(id); }); });
+}
+
 void StellarGallery::showContent(const QString& id)
 {
-    auto* panel = makePanel(tr("Mods, Packs & Shaders"));
+    auto* panel = makePanel(tr("Stellar Tools"));
     panel->setFixedWidth(300);
-    const auto add = [this, panel, id](const QString& title, const QString& page) {
-        auto* button = new GalleryButton(title, panel);
-        panel->layout()->addWidget(button);
-        connect(button, &QPushButton::clicked, panel, [this, id, page] {
-            auto* instance = APPLICATION->instances()->getInstanceById(id);
-            dismissPanel();
-            if (instance)
-                APPLICATION->showInstanceWindow(instance, page);
-        });
-    };
-    add(tr("Mods"), "mods");
-    add(tr("Resource Packs"), "resourcepacks");
-    add(tr("Shaders"), "shaderpacks");
+    auto* folder = new GalleryButton(tr("Open instance folder"), panel);
+    panel->layout()->addWidget(folder);
+    connect(folder, &QPushButton::clicked, panel, [id] {
+        if (const auto* instance = APPLICATION->instances()->getInstanceById(id))
+            QDesktopServices::openUrl(QUrl::fromLocalFile(instance->instanceRoot()));
+    });
     auto* look = new GalleryButton(tr("Enable Stellar title screen"), panel);
     panel->layout()->addWidget(look);
     connect(look, &QPushButton::clicked, panel, [this, id] {
@@ -1786,6 +1891,10 @@ void StellarGallery::copyInstance(const QString& source, const QStringList& entr
 
 void StellarGallery::showCreator()
 {
+    if (m_creation && m_creation->isRunning()) {
+        showCreationProgress();
+        return;
+    }
     auto* panel = makePanel(tr("Create New Instance"));
     panel->setFixedWidth(366);
     auto* layout = qobject_cast<QVBoxLayout*>(panel->layout());
@@ -1860,12 +1969,19 @@ void StellarGallery::showCreator()
         creation->setOriginalName(title, game->descriptor());
         creation->setIcon("default");
         creation->setTargetDir(APPLICATION->instances()->primaryDir());
-        unique_qobject_ptr<Task> task(APPLICATION->instances()->wrapInstanceTask(creation));
-        dismissPanel();
-        ProgressDialog progress(window());
-        progress.execWithTask(task.get());
-        if (task->getState() == Task::State::Failed)
-            QMessageBox::warning(window(), tr("Couldn’t create instance"), task->failReason());
+        auto* task = APPLICATION->instances()->wrapInstanceTask(creation);
+        task->setParent(this);
+        m_creation = task;
+        showCreationProgress();
+        connect(task, &Task::finished, this, [this, task] {
+            if (m_panel && m_panel->property("stellarCreation").toBool())
+                dismissPanel();
+            if (task->getState() == Task::State::Failed)
+                QMessageBox::warning(window(), tr("Couldn’t create instance"), task->failReason());
+            m_creation.clear();
+            task->deleteLater();
+        });
+        QTimer::singleShot(0, task, &Task::start);
     });
 
     const auto load = [panel](const Meta::VersionList::Ptr& list, std::function<void()> done) {
@@ -1890,6 +2006,29 @@ void StellarGallery::showCreator()
     load(fabric, validate);
     placePanel();
     name->setFocus();
+}
+
+void StellarGallery::showCreationProgress()
+{
+    auto* panel = makePanel(tr("Creating Instance"));
+    panel->setProperty("stellarCreation", true);
+    panel->setFixedWidth(380);
+    auto* status = new QLabel(tr("Preparing instance…"), panel);
+    status->setWordWrap(true);
+    panel->layout()->addWidget(status);
+    auto* progress = new QProgressBar(panel);
+    progress->setRange(0, 0);
+    progress->setTextVisible(false);
+    panel->layout()->addWidget(progress);
+    connect(m_creation, &Task::status, status, &QLabel::setText);
+    connect(m_creation, &Task::progress, progress, [progress](qint64 value, qint64 total) {
+        progress->setRange(0, total > 0 ? 100 : 0);
+        if (total > 0)
+            progress->setValue(qBound(0, qRound(100.0 * value / total), 100));
+    });
+    if (!m_creation->getStatus().isEmpty())
+        status->setText(m_creation->getStatus());
+    placePanel();
 }
 
 void StellarGallery::updateAccountIcons()
@@ -2038,7 +2177,7 @@ void StellarGallery::showModSettings()
             const auto* instance = instances->at(i);
             const QDir mods(QDir(instance->gameRoot()).filePath("mods"));
             allMods.append(mods);
-            if (!instance->isRunning() && instance->id() != m_launching)
+            if (!instance->isRunning() && !m_launches.contains(instance->id()))
                 inactiveMods.append(mods);
         }
         compact->setEnabled(false);
@@ -2102,10 +2241,23 @@ QString StellarGallery::artworkPath(const QString& instance, const QString& vers
 
 void StellarGallery::scheduleThumbnails()
 {
+    if (!m_scroll->isVisible() && m_detail)
+        return;
+    const int offset = m_scroll->horizontalScrollBar()->value();
+    const int left = offset - windowWidth;
+    const int right = offset + 2 * windowWidth;
     QStringList paths;
     for (auto* tile : std::as_const(m_tiles)) {
         const auto path = tile->property("wallpaperPath").toString();
-        if (!path.isEmpty() && !m_thumbnails.contains(path) && !m_pendingThumbnails.contains(path)) {
+        auto* card = static_cast<GalleryTile*>(tile);
+        if (tile->geometry().right() < left || tile->geometry().left() > right) {
+            if (!path.isEmpty())
+                card->setArtwork({});
+            continue;
+        }
+        if (const auto* cached = m_thumbnails.object(path))
+            card->setArtwork(*cached);
+        else if (!path.isEmpty() && !m_pendingThumbnails.contains(path)) {
             m_pendingThumbnails.insert(path);
             paths.append(path);
         }
@@ -2113,7 +2265,7 @@ void StellarGallery::scheduleThumbnails()
     if (paths.isEmpty())
         return;
 
-    QtConcurrent::run([paths] {
+    QtConcurrent::run(wallpaperPool(), [paths] {
         QList<QPair<QString, QImage>> decoded;
         decoded.reserve(paths.size());
         for (const auto& path : paths) {
@@ -2133,27 +2285,33 @@ void StellarGallery::scheduleThumbnails()
     }).then(this, [this](const QList<QPair<QString, QImage>>& decoded) {
         for (const auto& [path, image] : decoded) {
             m_pendingThumbnails.remove(path);
-            m_thumbnails.insert(path, QPixmap::fromImage(image));
+            m_thumbnails.insert(path, new QPixmap(QPixmap::fromImage(image)));
         }
-        for (auto* tile : std::as_const(m_tiles)) {
-            const auto path = tile->property("wallpaperPath").toString();
-            if (m_thumbnails.contains(path))
-                static_cast<GalleryTile*>(tile)->setArtwork(m_thumbnails.value(path));
-        }
+        scheduleThumbnails();
     });
 }
 
 QPixmap StellarGallery::wallpaperPixmap(const QString& file)
 {
-    if (!m_artwork.contains(file)) {
-        QImageReader reader(file);
-        const auto size = reader.size();
-        if (size.isValid())
-            reader.setScaledSize(size.scaled(1600, 1200, Qt::KeepAspectRatio));
-        const auto pixmap = QPixmap::fromImage(reader.read());
-        m_artwork.insert(file, pixmap.isNull() ? QPixmap(QStringLiteral(":/stellar-gallery/fallback.jpg")) : pixmap);
+    if (const auto* cached = m_artwork.object(file))
+        return *cached;
+    if (!file.isEmpty() && !m_detailDecoding) {
+        m_detailDecoding = true;
+        QtConcurrent::run(wallpaperPool(), [file] {
+            auto image = readWallpaper(file, QSize(1350, 760));
+            if (image.isNull())
+                image = readWallpaper(":/stellar-gallery/fallback.jpg", QSize(1000, 600));
+            return image;
+        }).then(this, [this, file](const QImage& image) {
+            m_detailDecoding = false;
+            m_artwork.insert(file, new QPixmap(QPixmap::fromImage(image)));
+            if (m_detail && (m_detailArtworkPath == file || !m_artwork.contains(m_detailArtworkPath)))
+                refreshInstance();
+        });
     }
-    return m_artwork.value(file);
+    if (const auto* thumbnail = m_thumbnails.object(file))
+        return *thumbnail;
+    return {};
 }
 
 void StellarGallery::fetchArtwork(const Collection& collection)
@@ -2211,7 +2369,7 @@ void StellarGallery::updateArtwork()
             const auto path = artworkPath(m_ids[i], versionOf(instance).minecraft);
             m_tiles[i]->setProperty("wallpaperPath", path);
             if (m_thumbnails.contains(path))
-                static_cast<GalleryTile*>(m_tiles[i])->setArtwork(m_thumbnails.value(path));
+                static_cast<GalleryTile*>(m_tiles[i])->setArtwork(*m_thumbnails.object(path));
         }
     }
     scheduleThumbnails();
@@ -2242,28 +2400,26 @@ void StellarGallery::showWallpapers(const QString& instance)
     preview->setFixedSize(308, 176);
     preview->setStyleSheet("background: #141416; border: 1px solid #37363d; border-radius: 9px;");
     auto* playback = new WallpaperPlayback(preview);
-    connect(&playback->movie, &QMovie::frameChanged, preview, [preview, playback] {
-        preview->setPixmap(playback->movie.currentPixmap());
-    });
+    playback->frameChanged = [preview, playback] { preview->setPixmap(playback->currentPixmap()); };
     body->addWidget(preview);
     layout->addLayout(body);
     connect(files, &QListWidget::currentItemChanged, panel, [preview, playback](const QListWidgetItem* item) {
         playback->setFile({}, {});
         preview->setText(QObject::tr("No preview available"));
+        preview->setProperty("stellarPreviewPath", QString());
         if (!item)
             return;
         const auto path = item->data(Qt::UserRole).toString();
-        QImageReader reader(path);
-        reader.setAutoTransform(true);
         const auto bounds = preview->size() - QSize(6, 6);
-        if (const auto size = reader.size(); size.isValid()) {
-            reader.setScaledSize(size.boundedTo(size.scaled(bounds, Qt::KeepAspectRatio)));
-            const auto image = reader.read();
-            if (!image.isNull())
-                preview->setPixmap(QPixmap::fromImage(image));
-        }
-        if (motionEnabled())
+        preview->setProperty("stellarPreviewPath", path);
+        if (path.endsWith(".gif", Qt::CaseInsensitive) && motionEnabled())
             playback->setFile(path, bounds);
+        QtConcurrent::run(wallpaperPool(), [path, bounds] { return readWallpaper(path, bounds); })
+            .then(preview, [preview, playback, path](const QImage& image) {
+                if (preview->property("stellarPreviewPath").toString() == path &&
+                    playback->currentPixmap().isNull() && !image.isNull())
+                    preview->setPixmap(QPixmap::fromImage(image));
+            });
     });
     preview->setText(tr("No wallpaper selected"));
     auto* shuffle = new QCheckBox(tr("Shuffle this collection when opening the instance"), panel);
@@ -2379,7 +2535,7 @@ void StellarGallery::showWallpapers(const QString& instance)
     });
     auto* refreshTimer = new QTimer(panel);
     connect(refreshTimer, &QTimer::timeout, panel, populate);
-    refreshTimer->start(350);
+    refreshTimer->start(1200);
     const auto selected = APPLICATION->settings()->get("StellarWallpaperCovers").toMap().value(instance).toString();
     auto collection = activeShuffle.isEmpty() ? QFileInfo(selected).dir().dirName() : activeShuffle;
     if (selected.isEmpty() && activeShuffle.isEmpty()) {
@@ -2414,26 +2570,35 @@ void StellarGallery::showWallpapers(const QString& instance)
 
 void StellarGallery::updateLaunch()
 {
-    const auto* shown = APPLICATION->instances()->getInstanceById(m_detailId);
-    auto* pending = m_launching.isEmpty() ? nullptr : APPLICATION->instances()->getInstanceById(m_launching);
-    if (!pending || !pending->launchController()) {
-        finishLaunch();
-        return;
+    auto* instances = APPLICATION->instances();
+    for (auto entry = m_launches.begin(); entry != m_launches.end();) {
+        auto* instance = instances->getInstanceById(entry.key());
+        const auto state = instance ? instance->property("stellarLaunchState").toString() : QString();
+        if (!instance || !instance->launchController() || state == "ready") {
+            if (instance)
+                instance->removeEventFilter(this);
+            entry = m_launches.erase(entry);
+        } else {
+            if (state == "java" && !entry.value().isValid())
+                entry.value().start();
+            ++entry;
+        }
     }
-    const auto state = pending->property("stellarLaunchState").toString();
-    if (state == "java" && !m_javaStartup.isValid())
-        m_javaStartup.start();
-    if (state == "ready") {
-        finishLaunch();
-        return;
-    }
+    if (m_launches.isEmpty())
+        m_launchTimer->stop();
+    auto* shown = instances->getInstanceById(m_detailId);
     if (!m_detail || !shown)
         return;
     auto* detail = static_cast<InstanceDetail*>(m_detail);
-    if (shown != pending) {
-        detail->setLaunchState(shown->isRunning() ? tr("Running") : tr("Launching another…"), true, false);
+    const auto pending = m_launches.constFind(m_detailId);
+    if (pending == m_launches.cend()) {
+        const bool running = shown->isRunning();
+        const bool checking = m_preflight.contains(m_detailId);
+        detail->setLaunchState(running ? tr("Running · Stop…") : checking ? tr("Checking mods…") : tr("Play"),
+                               running || checking, false, -1, running);
         return;
     }
+    const auto state = shown->property("stellarLaunchState").toString();
     const bool showProgress = APPLICATION->settings()->get("StellarLaunchAnimation").toString() != "off";
     const bool animate = showProgress && motionEnabled();
     if (state.startsWith("download ")) {
@@ -2441,7 +2606,7 @@ void StellarGallery::updateLaunch()
         detail->setLaunchState(tr("Downloading…"), true, animate, showProgress && progress > 0 ? progress : -1);
     } else {
         const bool java = state == "java";
-        const bool slow = java && m_javaStartup.hasExpired(90000);
+        const bool slow = java && pending.value().hasExpired(90000);
         const bool cover = wallpaperEffect(APPLICATION->settings()->get("StellarLaunchAnimation").toString());
         detail->setLaunchState(slow ? tr("Minecraft is still starting…") : java ? tr("Starting Minecraft…") : tr("Preparing…"),
                                true, animate && !slow, java && cover && !slow ? 96 : -1);

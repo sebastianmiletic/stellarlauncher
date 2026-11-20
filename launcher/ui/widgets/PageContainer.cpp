@@ -48,6 +48,7 @@
 #include <QSortFilterProxyModel>
 #include <QStackedLayout>
 #include <QStyledItemDelegate>
+#include <QScrollArea>
 #include <QUrl>
 #include <utility>
 
@@ -76,7 +77,7 @@ class PageEntryFilterModel : public QSortFilterProxyModel {
     }
 };
 
-PageContainer::PageContainer(BasePageProvider* pageProvider, QString defaultId, QWidget* parent)
+PageContainer::PageContainer(BasePageProvider* pageProvider, QString defaultId, QWidget* parent, bool scrollPages)
     : QWidget(parent), m_proxyModel(new PageEntryFilterModel(this)), m_model(new PageModel(this))
 {
     createUI();
@@ -86,7 +87,15 @@ PageContainer::PageContainer(BasePageProvider* pageProvider, QString defaultId, 
     auto pages = pageProvider->getPages();
     for (auto* page : pages) {
         auto* widget = dynamic_cast<QWidget*>(page);
-        widget->setParent(this);
+        if (scrollPages) {
+            auto* scroll = new QScrollArea(this);
+            scroll->setFrameShape(QFrame::NoFrame);
+            scroll->setWidgetResizable(true);
+            scroll->setWidget(widget);
+            widget = scroll;
+        } else {
+            widget->setParent(this);
+        }
         page->stackIndex = m_pageStack->addWidget(widget);
         page->listIndex = counter;
         page->setParentContainer(this);
@@ -128,7 +137,8 @@ bool PageContainer::selectPage(QString pageId)
 
 BasePage* PageContainer::getPage(QString pageId)
 {
-    return m_model->findPageEntryById(pageId);
+    auto* page = m_model->findPageEntryById(pageId);
+    return page ? page->materialize() : nullptr;
 }
 
 BasePage* PageContainer::selectedPage() const
@@ -144,7 +154,7 @@ const QList<BasePage*>& PageContainer::getPages() const
 void PageContainer::refreshContainer()
 {
     m_proxyModel->invalidate();
-    if (!m_currentPage->shouldDisplay()) {
+    if (!m_currentPage || !m_currentPage->shouldDisplay()) {
         auto index = m_proxyModel->index(0, 0);
         if (index.isValid()) {
             m_pageList->setCurrentIndex(index);
@@ -182,6 +192,14 @@ void PageContainer::createUI()
     m_layout->setColumnStretch(1, 4);
     m_layout->setContentsMargins(0, 0, 0, 0);
     setLayout(m_layout);
+}
+
+void PageContainer::useStellarSidebar()
+{
+    m_pageList->setObjectName("stellarEditorSidebar");
+    m_pageList->setAccessibleName(tr("Instance editor sections"));
+    m_pageList->setFixedWidth(156);
+    m_layout->setHorizontalSpacing(13);
 }
 
 void PageContainer::retranslate()
@@ -245,9 +263,7 @@ void PageContainer::currentChanged(const QModelIndex& current)
 {
     int selectedIndex = current.isValid() ? m_proxyModel->mapToSource(current).row() : -1;
 
-    Q_ASSERT(selectedIndex < m_model->pages().size() && selectedIndex >= 0);
-
-    auto* selected = m_model->pages().at(selectedIndex);
+    auto* selected = selectedIndex < 0 ? nullptr : m_model->pages().at(selectedIndex);
     auto* previous = m_currentPage;
 
     emit selectedPageChanged(previous, selected);

@@ -91,6 +91,7 @@ class CoreModFolderPage : public ModFolderPage {
     virtual QString id() const override { return "coremods"; }
     virtual QString helpPage() const override { return "Core-mods"; }
 
+    static bool available(const MinecraftInstance* instance);
     virtual bool shouldDisplay() const override;
 };
 

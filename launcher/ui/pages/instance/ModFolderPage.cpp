@@ -426,15 +426,16 @@ CoreModFolderPage::CoreModFolderPage(MinecraftInstance* inst, ModFolderModel* mo
 
 bool CoreModFolderPage::shouldDisplay() const
 {
-    if (ModFolderPage::shouldDisplay()) {
-        auto* version = m_instance->getPackProfile();
-        if ((version == nullptr) || !version->getComponent("net.minecraftforge") || !version->getComponent("net.minecraft")) {
-            return false;
-        }
-        auto minecraftCmp = version->getComponent("net.minecraft");
-        return minecraftCmp->m_loaded && minecraftCmp->getReleaseDateTime() < g_VersionFilterData.legacyCutoffDate;
-    }
-    return false;
+    return available(m_instance);
+}
+
+bool CoreModFolderPage::available(const MinecraftInstance* instance)
+{
+    auto* profile = instance->getPackProfile();
+    if (!profile || !profile->getComponent("net.minecraftforge"))
+        return false;
+    const auto minecraft = profile->getComponent("net.minecraft");
+    return minecraft && minecraft->m_loaded && minecraft->getReleaseDateTime() < g_VersionFilterData.legacyCutoffDate;
 }
 
 NilModFolderPage::NilModFolderPage(MinecraftInstance* inst, ModFolderModel* mods, QWidget* parent) : ModFolderPage(inst, mods, parent) {}

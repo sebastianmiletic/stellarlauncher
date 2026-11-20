@@ -39,24 +39,29 @@
 
 #include <QCloseEvent>
 #include <QHBoxLayout>
+#include <QLabel>
+#include <QPainterPath>
+#include <QShortcut>
+#include <QVBoxLayout>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QTimer>
 
 #include "ui/widgets/PageContainer.h"
+#include "ui/StellarGallery.h"
 
 #include "InstancePageProvider.h"
 
 #include "icons/IconList.h"
 
-InstanceWindow::InstanceWindow(MinecraftInstance* instance, QWidget* parent) : QMainWindow(parent), m_instance(instance)
+InstanceWindow::InstanceWindow(MinecraftInstance* instance, const QString& page, QWidget* parent) : QMainWindow(parent), m_instance(instance)
 {
     setAttribute(Qt::WA_DeleteOnClose);
     setWindowFlag(Qt::FramelessWindowHint);
 
     auto icon = APPLICATION->icons()->getIcon(m_instance->iconKey());
-    QString windowTitle = tr("Console window for ") + m_instance->name();
+    QString windowTitle = m_instance->name();
 
     // Set window properties
     {
@@ -67,10 +72,47 @@ InstanceWindow::InstanceWindow(MinecraftInstance* instance, QWidget* parent) : Q
     // Add page container
     {
         auto provider = std::make_shared<InstancePageProvider>(m_instance);
-        m_container = new PageContainer(provider.get(), "console", this);
+        m_container = new PageContainer(provider.get(), page.isEmpty() ? "version" : page, this, true);
         m_container->setParentContainer(this);
-        setCentralWidget(m_container);
-        setContentsMargins(0, 0, 0, 0);
+        m_container->useStellarSidebar();
+        auto* editor = new QWidget(this);
+        editor->setObjectName("stellarEditor");
+        auto* layout = new QVBoxLayout(editor);
+        layout->setContentsMargins(14, 10, 14, 10);
+        layout->setSpacing(10);
+        auto* header = new QHBoxLayout;
+        auto* name = new QLabel(m_instance->name(), editor);
+        name->setObjectName("stellarEditorTitle");
+        header->addWidget(name, 1);
+        m_wallpaperButton = new QPushButton(tr("Wallpaper"), editor);
+        m_toolsButton = new QPushButton(tr("Stellar Tools"), editor);
+        auto* close = new QPushButton(QStringLiteral("×"), editor);
+        close->setAccessibleName(tr("Close editor"));
+        close->setFixedWidth(34);
+        for (auto* button : {m_wallpaperButton, m_toolsButton, close})
+            header->addWidget(button);
+        m_wallpaperButton->hide();
+        m_toolsButton->hide();
+        connect(close, &QPushButton::clicked, this, &InstanceWindow::close);
+        for (const auto& key : {QKeySequence(Qt::Key_Escape), QKeySequence(QKeySequence::Close)}) {
+            auto* shortcut = new QShortcut(key, this);
+            connect(shortcut, &QShortcut::activated, this, &InstanceWindow::close);
+        }
+        layout->addLayout(header);
+        layout->addWidget(m_container, 1);
+        setCentralWidget(editor);
+        setStyleSheet(QStringLiteral(
+            "QWidget#stellarEditor { background: #141416; }"
+            "QLabel#stellarEditorTitle { font-size: 17px; font-weight: 600; }"
+            "QListView#stellarEditorSidebar { background: #1c1c20; border: 1px solid #37363d; border-radius: 9px; padding: 4px; }"
+            "QListView#stellarEditorSidebar::item { min-height: 24px; padding: 2px 7px; border-radius: 5px; }"
+            "QListView#stellarEditorSidebar::item:selected { background: #383541; color: #f0eff3; }"
+            "QPushButton, QToolButton { padding: 5px 8px; border-radius: 6px; border: 1px solid #414049; background: #24242a; }"
+            "QPushButton:hover, QToolButton:hover { background: #33323a; }"
+            "QPushButton:disabled, QToolButton:disabled { color: #93919a; border-color: #303036; }"
+            "QPushButton:focus, QToolButton:focus { border-color: #b6aace; }"
+        ));
+
     }
 
     // Add custom buttons to the page container layout.
@@ -129,6 +171,10 @@ InstanceWindow::InstanceWindow(MinecraftInstance* instance, QWidget* parent) : Q
         restoreState(QByteArray::fromBase64(base64State));
         auto base64Geometry = APPLICATION->settings()->get("ConsoleWindowGeometry").toString().toUtf8();
         restoreGeometry(QByteArray::fromBase64(base64Geometry));
+        setFixedSize(StellarGallery::windowSize);
+        QPainterPath outline;
+        outline.addRoundedRect(rect(), StellarGallery::cornerRadius, StellarGallery::cornerRadius);
+        setMask(QRegion(outline.toFillPolygon().toPolygon()));
     }
 
     // set up instance and launch process recognition
@@ -150,6 +196,16 @@ InstanceWindow::InstanceWindow(MinecraftInstance* instance, QWidget* parent) : Q
     }
 
     show();
+}
+
+void InstanceWindow::setStellarActions(std::function<void()> wallpaper, std::function<void()> tools)
+{
+    disconnect(m_wallpaperButton, nullptr, this, nullptr);
+    disconnect(m_toolsButton, nullptr, this, nullptr);
+    connect(m_wallpaperButton, &QPushButton::clicked, this, std::move(wallpaper));
+    connect(m_toolsButton, &QPushButton::clicked, this, std::move(tools));
+    m_wallpaperButton->show();
+    m_toolsButton->show();
 }
 
 void InstanceWindow::on_instanceStatusChanged(BaseInstance::Status, BaseInstance::Status newStatus)
