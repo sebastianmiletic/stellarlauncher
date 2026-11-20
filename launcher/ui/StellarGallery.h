@@ -38,6 +38,7 @@ public:
     void selectInstance(const QString& id);
 
 protected:
+    bool event(QEvent* event) override;
     bool eventFilter(QObject* object, QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
@@ -103,8 +104,10 @@ private:
     QPointer<QWidget> m_detailSlide;
     QList<QAbstractButton*> m_tiles;
     QList<Collection> m_collections;
-    QCache<QString, QPixmap> m_artwork{4};
-    QCache<QString, QPixmap> m_thumbnails{24};
+    QCache<QString, QPixmap> m_artwork{24 * 1024};
+    QCache<QString, QPixmap> m_thumbnails{32 * 1024};
+    QSize m_detailImageSize;
+    QSize m_thumbnailSize;
     QSet<QString> m_pendingThumbnails;
     QSet<QString> m_fetching;
     QSet<QString> m_attempted;

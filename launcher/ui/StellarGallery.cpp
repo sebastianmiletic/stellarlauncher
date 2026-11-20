@@ -136,14 +136,25 @@ QThreadPool* wallpaperPool()
     return pool;
 }
 
-QImage readWallpaper(const QString& path, const QSize& bounds)
+QImage readWallpaper(const QString& path, const QSize& bounds, bool cover = false)
 {
     QImageReader reader(path);
     reader.setAutoTransform(true);
     const auto size = reader.size();
     if (size.isValid())
-        reader.setScaledSize(size.boundedTo(size.scaled(bounds, Qt::KeepAspectRatio)));
-    return reader.read();
+        reader.setScaledSize(size.boundedTo(size.scaled(bounds, cover ? Qt::KeepAspectRatioByExpanding : Qt::KeepAspectRatio)));
+    auto image = reader.read();
+    if (cover && !image.isNull()) {
+        const auto crop = bounds.scaled(image.size(), Qt::KeepAspectRatio).boundedTo(bounds);
+        if (crop.isValid() && crop != image.size())
+            image = image.copy((image.width() - crop.width()) / 2, (image.height() - crop.height()) / 2, crop.width(), crop.height());
+    }
+    return image;
+}
+
+int pixmapKiB(const QImage& image)
+{
+    return qMax(1, int((qint64(image.width()) * image.height() * 4 + 1023) / 1024));
 }
 
 class WallpaperPlayback final : public QObject {
@@ -510,11 +521,13 @@ public:
         setCursor(Qt::PointingHandCursor);
     }
 
-    void setAccountCard(QPixmap skin, QString username)
+    void setAccountCard(QPixmap skin, QString username, QString played, QString count)
     {
         m_accountCard = true;
         m_accountSkin = std::move(skin);
         m_accountName = std::move(username);
+        m_accountPlaytime = std::move(played);
+        m_accountInstances = std::move(count);
         update();
     }
 
@@ -617,34 +630,50 @@ protected:
         painter.fillRect(bounds, QColor("#1c1c20"));
 
         if (m_accountCard) {
-            QRadialGradient glow(bounds.center() - QPoint(0, 22), qMax(125, width() / 2));
+            QRadialGradient glow(bounds.center() - QPoint(width() / 6, 38), qMax(135, width() / 2));
             glow.setColorAt(0, QColor("#33313b"));
             glow.setColorAt(1, QColor("#1c1c20"));
             painter.fillRect(bounds, glow);
-            const int scale = qBound(3, width() / 44, 6);
-            const QRect figure(bounds.center().x() - 8 * scale, bounds.center().y() - 16 * scale - 25, 16 * scale, 32 * scale);
+            const int innerWidth = qMin(420, width() - 32);
+            const int left = (width() - innerWidth) / 2;
+            const int leftColumn = innerWidth * 42 / 100;
+            const int scale = qBound(3, leftColumn / 18, 7);
+            const int centerY = bounds.center().y() - 12;
+            const QRect figure(left + (leftColumn - 16 * scale) / 2, centerY - 16 * scale, 16 * scale, 32 * scale);
+            painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
             if (m_accountSkin.isNull()) {
                 const auto face = accountFace(nullptr).pixmap(8 * scale, 8 * scale);
                 painter.drawPixmap(QRect(figure.x() + 4 * scale, figure.y(), 8 * scale, 8 * scale), face);
                 painter.fillRect(figure.x(), figure.y() + 8 * scale, 16 * scale, 12 * scale, QColor("#464651"));
                 painter.fillRect(figure.x() + 4 * scale, figure.y() + 20 * scale, 8 * scale, 12 * scale, QColor("#353541"));
             } else {
-                painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
                 painter.drawPixmap(figure, m_accountSkin);
             }
+
+            const int textLeft = left + leftColumn + 12;
+            const int textWidth = width() - left - textLeft;
+            const auto line = [&](int y, const QString& value, int size, QFont::Weight weight, const QColor& color) {
+                auto style = font();
+                style.setPixelSize(size);
+                style.setWeight(weight);
+                painter.setFont(style);
+                painter.setPen(color);
+                painter.drawText(QRect(textLeft, y, textWidth, 24), Qt::AlignVCenter,
+                                 painter.fontMetrics().elidedText(value, Qt::ElideRight, textWidth));
+            };
+            line(centerY - 67, m_accountName, 17, QFont::DemiBold, QColor("#ecebf0"));
+            line(centerY - 31, QObject::tr("Launcher playtime"), 12, QFont::Normal, QColor("#bcb9c5"));
+            line(centerY - 12, m_accountPlaytime, 15, QFont::DemiBold, QColor("#ecebf0"));
+            line(centerY + 24, QObject::tr("Instances"), 12, QFont::Normal, QColor("#bcb9c5"));
+            line(centerY + 43, m_accountInstances, 15, QFont::DemiBold, QColor("#ecebf0"));
+
             auto heading = font();
             heading.setPixelSize(17);
             heading.setWeight(QFont::DemiBold);
             painter.setFont(heading);
             painter.setPen(QColor("#ecebf0"));
-            const QRect title(12, height() - 76, width() - 24, 26);
+            const QRect title(12, height() - 62, width() - 24, 26);
             painter.drawText(title, Qt::AlignCenter, painter.fontMetrics().elidedText(text(), Qt::ElideRight, title.width()));
-            heading.setPixelSize(13);
-            heading.setWeight(QFont::Normal);
-            painter.setFont(heading);
-            painter.setPen(QColor("#bcb9c5"));
-            painter.drawText(title.translated(0, 24), Qt::AlignCenter,
-                             painter.fontMetrics().elidedText(m_accountName, Qt::ElideRight, title.width()));
         } else if (m_version.isEmpty() && m_image.isNull()) {
             const QPoint center = bounds.center() - QPoint(0, 10);
             painter.setPen(QPen(QColor("#ecebf0"), 1.6, Qt::SolidLine, Qt::RoundCap));
@@ -683,6 +712,8 @@ private:
     QPixmap m_image;
     QPixmap m_accountSkin;
     QString m_accountName;
+    QString m_accountPlaytime;
+    QString m_accountInstances;
     bool m_accountCard = false;
     ButtonFeedback m_feedback;
     int m_clickNumber = 0;
@@ -765,7 +796,7 @@ public:
 
     void setWallpaperFile(const QString& path)
     {
-        m_playback->setFile(motionEnabled() ? path : QString(), QSize(1000, 600));
+        m_playback->setFile(motionEnabled() ? path : QString(), size() * devicePixelRatioF());
     }
 
     void suspendWallpaper(bool suspended) { m_playback->setSuspended(suspended); }
@@ -1423,6 +1454,18 @@ void StellarGallery::keyPressEvent(QKeyEvent* event)
     }
 }
 
+bool StellarGallery::event(QEvent* event)
+{
+    if (event->type() == QEvent::DevicePixelRatioChange) {
+        QTimer::singleShot(0, this, [this] {
+            scheduleThumbnails();
+            if (m_detail)
+                refreshInstance();
+        });
+    }
+    return QWidget::event(event);
+}
+
 bool StellarGallery::eventFilter(QObject* object, QEvent* event)
 {
     if (event->type() == QEvent::DynamicPropertyChange && !m_launches.isEmpty()) {
@@ -1999,8 +2042,14 @@ void StellarGallery::updateAccountIcons()
         const QDir skins(APPLICATION->settings()->get("SkinsDir").toString());
         preview = SkinModel::frontPreview(QImage(skins.filePath("Minecraft Defaults/Steve.png")), SkinModel::CLASSIC);
     }
+    const auto* instances = APPLICATION->instances();
+    qint64 played = 0;
+    for (int i = 0; i < instances->count(); ++i)
+        played += instances->at(i)->totalTimePlayed();
     static_cast<GalleryTile*>(m_accountTile)->setAccountCard(QPixmap::fromImage(preview),
-        account ? account->displayName() : tr("No account connected"));
+        account ? account->displayName() : tr("No account connected"),
+        played ? Time::prettifyDuration(played) : tr("0 min"),
+        QLocale().toString(instances->count()));
 }
 
 void StellarGallery::showAccounts()
@@ -2232,6 +2281,13 @@ void StellarGallery::scheduleThumbnails()
 {
     if (!m_scroll->isVisible() && m_detail)
         return;
+    if (m_tiles.isEmpty())
+        return;
+    const auto target = m_tiles.first()->size() * devicePixelRatioF();
+    if (target != m_thumbnailSize) {
+        m_thumbnailSize = target;
+        m_thumbnails.clear();
+    }
     const int offset = m_scroll->horizontalScrollBar()->value();
     const int left = offset - windowWidth;
     const int right = offset + 2 * windowWidth;
@@ -2254,27 +2310,21 @@ void StellarGallery::scheduleThumbnails()
     if (paths.isEmpty())
         return;
 
-    QtConcurrent::run(wallpaperPool(), [paths] {
+    QtConcurrent::run(wallpaperPool(), [paths, target] {
         QList<QPair<QString, QImage>> decoded;
         decoded.reserve(paths.size());
         for (const auto& path : paths) {
-            QImageReader reader(path);
-            const auto size = reader.size();
-            if (size.isValid())
-                reader.setScaledSize(size.scaled(650, 650, Qt::KeepAspectRatio));
-            auto image = reader.read();
-            if (image.isNull()) {
-                QImageReader fallback(":/stellar-gallery/fallback.jpg");
-                fallback.setScaledSize(QSize(650, 365));
-                image = fallback.read();
-            }
+            auto image = readWallpaper(path, target, true);
+            if (image.isNull())
+                image = readWallpaper(":/stellar-gallery/fallback.jpg", target, true);
             decoded.append({path, std::move(image)});
         }
         return decoded;
-    }).then(this, [this](const QList<QPair<QString, QImage>>& decoded) {
+    }).then(this, [this, target](const QList<QPair<QString, QImage>>& decoded) {
         for (const auto& [path, image] : decoded) {
             m_pendingThumbnails.remove(path);
-            m_thumbnails.insert(path, new QPixmap(QPixmap::fromImage(image)));
+            if (target == m_thumbnailSize)
+                m_thumbnails.insert(path, new QPixmap(QPixmap::fromImage(image)), pixmapKiB(image));
         }
         scheduleThumbnails();
     });
@@ -2282,24 +2332,28 @@ void StellarGallery::scheduleThumbnails()
 
 QPixmap StellarGallery::wallpaperPixmap(const QString& file)
 {
+    const auto target = size() * devicePixelRatioF();
+    if (target != m_detailImageSize) {
+        m_detailImageSize = target;
+        m_artwork.clear();
+    }
     if (const auto* cached = m_artwork.object(file))
         return *cached;
     if (!file.isEmpty() && !m_detailDecoding) {
         m_detailDecoding = true;
-        QtConcurrent::run(wallpaperPool(), [file] {
-            auto image = readWallpaper(file, QSize(1350, 760));
+        QtConcurrent::run(wallpaperPool(), [file, target] {
+            auto image = readWallpaper(file, target, true);
             if (image.isNull())
-                image = readWallpaper(":/stellar-gallery/fallback.jpg", QSize(1000, 600));
+                image = readWallpaper(":/stellar-gallery/fallback.jpg", target, true);
             return image;
-        }).then(this, [this, file](const QImage& image) {
+        }).then(this, [this, file, target](const QImage& image) {
             m_detailDecoding = false;
-            m_artwork.insert(file, new QPixmap(QPixmap::fromImage(image)));
+            if (target == m_detailImageSize)
+                m_artwork.insert(file, new QPixmap(QPixmap::fromImage(image)), pixmapKiB(image));
             if (m_detail && (m_detailArtworkPath == file || !m_artwork.contains(m_detailArtworkPath)))
                 refreshInstance();
         });
     }
-    if (const auto* thumbnail = m_thumbnails.object(file))
-        return *thumbnail;
     return {};
 }
 
