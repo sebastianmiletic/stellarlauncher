@@ -14,7 +14,8 @@ QStringList browseForFiles(const QString& context,
                            const QString& caption,
                            const QString& filter,
                            const QString& defaultPath,
-                           QWidget* parentWidget);
+                           QWidget* parentWidget,
+                           const QString& folderAction = {});
 QString browseForFile(const QString& context,
                       const QString& caption,
                       const QString& filter,

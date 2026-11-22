@@ -57,6 +57,7 @@
 #include <QProcess>
 #include <QPushButton>
 #include <QSortFilterProxyModel>
+#include <QStandardPaths>
 #include <QTreeView>
 #include <Qt>
 #include <algorithm>
@@ -444,15 +445,19 @@ void WorldListPage::worldChanged()
 
 void WorldListPage::on_actionAdd_triggered()
 {
-    auto list = GuiUtil::browseForFiles(displayName(), tr("Select a Minecraft world zip"), tr("Minecraft World Zip File") + " (*.zip)",
-                                        QString(), this->parentWidget());
+    const auto list = GuiUtil::browseForFiles(displayName(), tr("Import World"), tr("All Files (*)") + ";;" + tr("World ZIPs (*.zip)"),
+                                              QStandardPaths::writableLocation(QStandardPaths::DownloadLocation), parentWidget(),
+                                              tr("Use Folder"));
     if (list.empty()) {
         return;
     }
 
     m_worlds->stopWatching();
     for (const auto& filename : list) {
-        auto task = m_worlds->createInstallWorldTask(QFileInfo(filename));
+        QFileInfo source(filename);
+        if (source.fileName() == QStringLiteral("level.dat") && source.isFile())
+            source.setFile(source.absolutePath());
+        auto task = m_worlds->createInstallWorldTask(source);
         if (!task) {
             continue;
         }

@@ -40,6 +40,21 @@ void InstallWorldTask::executeTask()
     QThreadPool::globalInstance()->start([self, args]() mutable {
         World world(args.sourceFile);
         world.loadMetadata();
+        if (args.sourceFile.isDir()) {
+            const bool copied = world.isValid() && world.install(args.targetDir);
+            invokeOnMainThread([self, worlds = args.worlds, copied] {
+                if (!self)
+                    return;
+                if (!copied) {
+                    self->emitFailed(self->tr("Couldn’t import this folder. Choose a Minecraft Java world containing level.dat."));
+                    return;
+                }
+                if (worlds)
+                    worlds->update();
+                self->emitSucceeded();
+            });
+            return;
+        }
 
         invokeOnMainThread([self, args, world]() {
             if (!self) {
@@ -48,7 +63,7 @@ void InstallWorldTask::executeTask()
 
             auto finalPath = FS::PathCombine(args.targetDir, FS::DirNameFromString(world.name(), { args.targetDir }));
             if (!world.isValid() || !FS::ensureFolderPathExists(finalPath)) {
-                self->emitFailed(self->tr("Failed to import world."));
+                self->emitFailed(self->tr("Couldn’t import this world. Choose a ZIP archive or a Minecraft Java world folder."));
                 return;
             }
 

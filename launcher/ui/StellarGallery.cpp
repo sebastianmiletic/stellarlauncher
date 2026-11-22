@@ -2787,7 +2787,7 @@ void StellarGallery::showWallpapers(const QString& instance)
         auto* picker = new QFileDialog(dialog, tr("Upload Wallpaper"));
         picker->setAttribute(Qt::WA_DeleteOnClose);
         picker->setFileMode(QFileDialog::ExistingFiles);
-        picker->setNameFilter(tr("Images (*.png *.jpg *.jpeg *.webp *.gif)"));
+        picker->setNameFilters({tr("Images (*.png *.jpg *.jpeg *.webp *.gif)"), tr("All Files (*)")});
         const auto folder = QDir(m_wallpapers).filePath("animated");
         connect(picker, &QFileDialog::filesSelected, dialog, [dialog, files, collections, status, upload, folder, refresh](const QStringList& paths) {
             upload->setEnabled(false);

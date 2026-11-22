@@ -225,7 +225,7 @@ void World::repath(const QFileInfo& file)
     m_containerFile = file;
     m_folderName = file.fileName();
     m_metadataLoaded = false;
-    if (file.isFile() && file.suffix() == "zip") {
+    if (file.isFile() && file.suffix().compare("zip", Qt::CaseInsensitive) == 0) {
         m_iconFile = QString();
         m_isValid = true;
     } else if (file.isDir()) {
@@ -244,7 +244,7 @@ void World::loadMetadata()
     if (m_metadataLoaded) {
         return;
     }
-    if (m_containerFile.isFile() && m_containerFile.suffix() == "zip") {
+    if (m_containerFile.isFile() && m_containerFile.suffix().compare("zip", Qt::CaseInsensitive) == 0) {
         readFromZip(m_containerFile);
     } else if (m_containerFile.isDir()) {
         readFromFS(m_containerFile);

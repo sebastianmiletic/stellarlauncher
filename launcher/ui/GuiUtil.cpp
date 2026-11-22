@@ -41,6 +41,8 @@
 #include <QBuffer>
 #include <QClipboard>
 #include <QFileDialog>
+#include <QDialogButtonBox>
+#include <QPushButton>
 #include <QStandardPaths>
 #include <expected>
 #include <utility>
@@ -181,7 +183,8 @@ QStringList browseForFileInternal(const QString& context,
                                   const QString& filter,
                                   const QString& defaultPath,
                                   QWidget* parentWidget,
-                                  bool single)
+                                  bool single,
+                                  const QString& folderAction = {})
 {
     static QMap<QString, QString> s_savedPaths;
 
@@ -208,6 +211,19 @@ QStringList browseForFileInternal(const QString& context,
     w.setFileMode(single ? QFileDialog::ExistingFile : QFileDialog::ExistingFiles);
     w.setAcceptMode(QFileDialog::AcceptOpen);
     w.setNameFilter(filter);
+    QString folder;
+    if (!folderAction.isEmpty()) {
+        w.setOption(QFileDialog::DontUseNativeDialog);
+        if (auto* buttons = w.findChild<QDialogButtonBox*>()) {
+            auto* choose = buttons->addButton(folderAction, QDialogButtonBox::ActionRole);
+            choose->setToolTip(QObject::tr("Use the selected folder or the open folder"));
+            QObject::connect(choose, &QPushButton::clicked, &w, [&w, &folder] {
+                const QFileInfo selection(w.selectedFiles().value(0));
+                folder = selection.isDir() ? selection.absoluteFilePath() : w.directory().absolutePath();
+                static_cast<QDialog&>(w).done(QDialog::Accepted);
+            });
+        }
+    }
 
     QString pathToOpen;
     if (s_savedPaths.contains(context)) {
@@ -224,12 +240,11 @@ QStringList browseForFileInternal(const QString& context,
 
     w.setSidebarUrls(urls);
 
-    if (w.exec() != 0) {
-        s_savedPaths[context] = w.directory().absolutePath();
-        return w.selectedFiles();
-    }
+    const bool accepted = w.exec() == QDialog::Accepted;
     s_savedPaths[context] = w.directory().absolutePath();
-    return {};
+    if (!folder.isEmpty() && accepted)
+        return {folder};
+    return accepted ? w.selectedFiles() : QStringList{};
 }
 }  // namespace
 
@@ -250,7 +265,8 @@ QStringList GuiUtil::browseForFiles(const QString& context,
                                     const QString& caption,
                                     const QString& filter,
                                     const QString& defaultPath,
-                                    QWidget* parentWidget)
+                                    QWidget* parentWidget,
+                                    const QString& folderAction)
 {
-    return browseForFileInternal(context, caption, filter, defaultPath, parentWidget, false);
+    return browseForFileInternal(context, caption, filter, defaultPath, parentWidget, false, folderAction);
 }
