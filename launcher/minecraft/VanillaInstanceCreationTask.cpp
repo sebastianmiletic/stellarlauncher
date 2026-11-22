@@ -39,12 +39,25 @@ void VanillaCreationTask::executeTask()
         components->saveNow();
     }
 
-    if (m_horizon)
+    if (m_horizon) {
+        const auto gameDir = m_instance->gameRoot();
+        if (!FS::ensureFolderPathExists(gameDir)) {
+            emitFailed(tr("Couldn’t create the Horizon game folder."));
+            return;
+        }
+        const auto options = FS::PathCombine(gameDir, "options.txt");
+        // Horizon uses 260 for Unlimited, as Minecraft's video settings do.
+        const auto written = FS::write(options, "maxFps:260\nenableVsync:false\n");
+        if (!written) {
+            emitFailed(tr("Couldn’t write Horizon’s initial video settings: %1").arg(written.error()));
+            return;
+        }
         emitSucceeded();
-    else if (m_performanceMods && m_loader == "net.fabricmc.fabric-loader")
+    } else if (m_performanceMods && m_loader == "net.fabricmc.fabric-loader") {
         installPerformanceMods();
-    else
+    } else {
         downloadFiles(m_instance.get());
+    }
 }
 
 void VanillaCreationTask::installPerformanceMods()
