@@ -1843,7 +1843,11 @@ bool Application::launchHorizon(MinecraftInstance* instance)
     connect(process, &QProcess::finished, this, [finish](int code, QProcess::ExitStatus status) {
         finish(status == QProcess::NormalExit && code == 0);
     });
-    process->start(program, {"play", "--instance", "horizon"});
+    QStringList arguments{"play", "--instance", "horizon"};
+    const auto version = instance->settings()->get("StellarHorizonVersion").toString();
+    if (!version.isEmpty())
+        arguments << "--version" << version;
+    process->start(program, arguments);
     return true;
 }
 

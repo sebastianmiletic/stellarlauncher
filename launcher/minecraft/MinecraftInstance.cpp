@@ -173,6 +173,7 @@ MinecraftInstance::MinecraftInstance(SettingsObject* globalSettings, std::unique
     : BaseInstance(globalSettings, std::move(settings), rootDir)
 {
     m_settings->registerSetting("StellarHorizon", false);
+    m_settings->registerSetting("StellarHorizonVersion", QString());
     m_components.reset(new PackProfile(this));
 }
 
