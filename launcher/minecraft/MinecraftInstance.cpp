@@ -172,6 +172,7 @@ class OrSetting : public Setting {
 MinecraftInstance::MinecraftInstance(SettingsObject* globalSettings, std::unique_ptr<SettingsObject> settings, const QString& rootDir)
     : BaseInstance(globalSettings, std::move(settings), rootDir)
 {
+    m_settings->registerSetting("StellarHorizon", false);
     m_components.reset(new PackProfile(this));
 }
 
@@ -374,6 +375,11 @@ void MinecraftInstance::populateLaunchMenu(QMenu* menu, QAction* normalLaunch)
         QString error;
         profilerAction->setEnabled(profiler.value()->check(&error));
     }
+}
+
+bool MinecraftInstance::isHorizon() const
+{
+    return m_settings->get("StellarHorizon").toBool();
 }
 
 QString MinecraftInstance::gameRoot() const

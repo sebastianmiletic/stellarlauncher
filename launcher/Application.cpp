@@ -95,6 +95,11 @@
 #include <QCommandLineParser>
 #include <QDebug>
 #include <QDir>
+#include <QProcess>
+#include <QPushButton>
+#include <QStandardPaths>
+#include <QDesktopServices>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QFileOpenEvent>
 #include <QIcon>
@@ -838,6 +843,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("EditInstanceOnDoubleClick", false);
         m_settings->registerSetting("SelectedInstance", QString());
         m_settings->registerSetting("StellarLaunchAnimation", "wave");
+        m_settings->registerSetting("StellarHorizonLauncher", QString());
         m_settings->registerSetting("StellarAutoMatchMods", true);
         m_settings->registerSetting("StellarFillScreen", false);
         m_settings->registerSetting("StellarOpeningAnimation", true);
@@ -1680,6 +1686,8 @@ bool Application::launch(MinecraftInstance* instance,
 {
     if (m_updateRunning) {
         qDebug() << "Cannot launch instances while an update is running. Please try again when updates are completed.";
+    } else if (instance->isHorizon()) {
+        return launchHorizon(instance);
     } else if (instance->canLaunch()) {
         if (instance->window() != nullptr) {
             if (!instance->window()->saveAll()) {
@@ -1729,6 +1737,114 @@ bool Application::launch(MinecraftInstance* instance,
         return true;
     }
     return false;
+}
+
+QString Application::horizonLauncher() const
+{
+    const auto configured = settings()->get("StellarHorizonLauncher").toString();
+    if (QFileInfo(configured).isExecutable() && QFileInfo(configured).isFile())
+        return configured;
+#ifdef Q_OS_MACOS
+    for (const auto& root : {QStringLiteral("/Applications"), QDir::home().filePath("Applications")}) {
+        auto path = QDir(root).filePath("Horizon.app/Contents/MacOS/horizon-launcher");
+        if (QFileInfo(path).isExecutable())
+            return path;
+    }
+#endif
+    return QStandardPaths::findExecutable("horizon-launcher");
+}
+
+void Application::openHorizonSetup()
+{
+    const auto program = horizonLauncher();
+    if (!program.isEmpty()) {
+        QProcess::startDetached(program, {});
+        return;
+    }
+    auto* setup = new QMessageBox(QMessageBox::Information, tr("Set Up Horizon"),
+        tr("Install Horizon’s launcher to prepare the Rust engine and sign in with your Minecraft account."),
+        QMessageBox::Cancel, m_mainWindow);
+    auto* download = setup->addButton(tr("Download Horizon"), QMessageBox::ActionRole);
+    auto* locate = setup->addButton(tr("Locate Launcher…"), QMessageBox::ActionRole);
+    setup->setAttribute(Qt::WA_DeleteOnClose);
+    connect(setup, &QMessageBox::finished, this, [this, setup, download, locate] {
+        if (setup->clickedButton() == download)
+            QDesktopServices::openUrl(QUrl("https://playhorizon.dev/download"));
+        if (setup->clickedButton() != locate)
+            return;
+        auto path = QFileDialog::getOpenFileName(m_mainWindow, tr("Locate Horizon Launcher"));
+#ifdef Q_OS_MACOS
+        if (path.endsWith(".app"))
+            path = QDir(path).filePath("Contents/MacOS/horizon-launcher");
+#endif
+        if (QFileInfo(path).isExecutable() && QFileInfo(path).isFile())
+            settings()->set("StellarHorizonLauncher", path);
+    });
+    setup->open();
+}
+
+bool Application::launchHorizon(MinecraftInstance* instance)
+{
+    if (instance->isRunning())
+        return false;
+    const auto program = horizonLauncher();
+    if (program.isEmpty()) {
+        openHorizonSetup();
+        return false;
+    }
+    if (!QDir().mkpath(instance->gameRoot())) {
+        QMessageBox::warning(m_mainWindow, tr("Couldn’t Start Horizon"), tr("Stellar couldn’t create the game folder."));
+        return false;
+    }
+
+    const auto logPath = QDir(instance->gameRoot()).filePath("stellar-horizon.log");
+    auto* process = new QProcess(this);
+    auto environment = QProcessEnvironment::systemEnvironment();
+    environment.insert("HORIZON_HOME", QDir(instance->gameRoot()).absolutePath());
+    process->setProcessEnvironment(environment);
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    process->setStandardOutputFile(logPath);
+    instance->setRunning(true);
+    addRunningInstance();
+    const auto finish = [this, process, current = QPointer<MinecraftInstance>(instance), logPath](bool ok) {
+        if (current) {
+            current->setMinecraftRunning(false);
+            current->setRunning(false);
+        }
+        if (!ok) {
+            QFile log(logPath);
+            QString detail;
+            if (log.open(QIODevice::ReadOnly)) {
+                log.seek(qMax(qint64(0), log.size() - 1000));
+                detail = QString::fromUtf8(log.readAll()).trimmed();
+            }
+            auto* notice = new QMessageBox(QMessageBox::Warning, tr("Horizon Didn’t Start"),
+                tr("Open Horizon to finish setup, then try Play again."), QMessageBox::Close, m_mainWindow);
+            notice->setTextFormat(Qt::PlainText);
+            notice->setDetailedText(detail);
+            auto* setup = notice->addButton(tr("Open Horizon"), QMessageBox::ActionRole);
+            notice->setAttribute(Qt::WA_DeleteOnClose);
+            connect(notice, &QMessageBox::finished, this, [this, notice, setup] {
+                if (notice->clickedButton() == setup)
+                    openHorizonSetup();
+            });
+            notice->open();
+        }
+        process->deleteLater();
+        subRunningInstance();
+        if (shouldExitNow())
+            exit(0);
+    };
+    connect(process, &QProcess::started, instance, [instance] { instance->setMinecraftRunning(true); });
+    connect(process, &QProcess::errorOccurred, this, [finish](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart)
+            finish(false);
+    });
+    connect(process, &QProcess::finished, this, [finish](int code, QProcess::ExitStatus status) {
+        finish(status == QProcess::NormalExit && code == 0);
+    });
+    process->start(program, {"play", "--instance", "horizon"});
+    return true;
 }
 
 bool Application::kill(BaseInstance* instance)

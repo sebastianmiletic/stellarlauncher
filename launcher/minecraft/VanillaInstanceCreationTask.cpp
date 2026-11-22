@@ -34,11 +34,14 @@ void VanillaCreationTask::executeTask()
 
         m_instance->setName(name());
         m_instance->setIconKey(m_instIcon);
+        m_instance->settings()->set("StellarHorizon", m_horizon);
 
         components->saveNow();
     }
 
-    if (m_performanceMods && m_loader == "net.fabricmc.fabric-loader")
+    if (m_horizon)
+        emitSucceeded();
+    else if (m_performanceMods && m_loader == "net.fabricmc.fabric-loader")
         installPerformanceMods();
     else
         downloadFiles(m_instance.get());

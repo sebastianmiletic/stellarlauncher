@@ -4,6 +4,7 @@
 #include <QAbstractButton>
 #include <QApplication>
 #include <QAbstractItemView>
+#include <QButtonGroup>
 #include <QCheckBox>
 #include <QCursor>
 #include <QComboBox>
@@ -60,7 +61,6 @@
 #include "ui/InstanceWindow.h"
 #include "ui/themes/ThemeManager.h"
 #include "FileSystem.h"
-#include "InstanceDirUpdate.h"
 #include "InstanceList.h"
 #include "MMCTime.h"
 #include "archive/ArchiveReader.h"
@@ -89,6 +89,8 @@ struct InstanceVersion {
 
 InstanceVersion versionOf(const MinecraftInstance* instance)
 {
+    if (instance->isHorizon())
+        return {"26.3", "Horizon"};
     QFile file(QDir(instance->instanceRoot()).filePath("mmc-pack.json"));
     InstanceVersion version;
     if (file.open(QIODevice::ReadOnly)) {
@@ -1117,7 +1119,9 @@ void StellarGallery::rebuild()
         auto version = versions.value(id).minecraft;
         const auto path = instance ? artworkPath(id, version) : QString();
         auto* tile = existing.take(id);
-        if (instance && version.isEmpty())
+        if (instance && instance->isHorizon())
+            version = tr("Horizon · %1").arg(version);
+        else if (instance && version.isEmpty())
             version = tr("Minecraft");
         const bool fresh = !tile;
         if (fresh) {
@@ -1382,7 +1386,7 @@ void StellarGallery::playInstance(const QString& id)
     if (!instance || m_launches.contains(id) || m_preflight.contains(id))
         return;
 
-    if (!instance->canLaunch()) {
+    if (instance->isHorizon() || !instance->canLaunch()) {
         APPLICATION->launch(instance);
         return;
     }
@@ -1433,6 +1437,15 @@ void StellarGallery::showStop(const QString& id)
     const auto* instance = APPLICATION->instances()->getInstanceById(id);
     if (!instance || !instance->isRunning())
         return;
+    if (instance->isHorizon()) {
+        auto* panel = makePanel(tr("Horizon is running"));
+        panel->setFixedWidth(300);
+        auto* hint = new QLabel(tr("Quit from Horizon to save and stop this instance."), panel);
+        hint->setWordWrap(true);
+        panel->layout()->addWidget(hint);
+        placePanel();
+        return;
+    }
     auto* panel = makePanel(tr("Stop Minecraft?"));
     panel->setFixedWidth(326);
     auto* message = new QLabel(tr("Force stop %1? Unsaved progress might be lost.").arg(instance->name()), panel);
@@ -1718,19 +1731,50 @@ void StellarGallery::trashInstance(const QString& id)
     if (!canTrash())
         return;
 
-    auto* confirmation = new QMessageBox(QMessageBox::Warning, tr("Move Instance to Trash"),
-        tr("Move “%1” and its local files to the Trash?").arg(instances->getInstanceById(id)->name()),
-        QMessageBox::Cancel, window());
-    auto* move = confirmation->addButton(tr("Move to Trash"), QMessageBox::DestructiveRole);
-    confirmation->setDefaultButton(QMessageBox::Cancel);
-    confirmation->setAttribute(Qt::WA_DeleteOnClose);
-    connect(confirmation, &QMessageBox::finished, this, [this, confirmation, move, instances, id, canTrash] {
-        if (confirmation->clickedButton() != move || !canTrash() || !checkLinkedInstances(id, window(), tr("Trashing")) || !canTrash())
+    const auto name = instances->getInstanceById(id)->name();
+    auto* panel = makePanel(tr("Move to Trash?"));
+    panel->setFixedWidth(350);
+    auto* layout = qobject_cast<QVBoxLayout*>(panel->layout());
+    auto* title = new QLabel(name, panel);
+    title->setTextFormat(Qt::PlainText);
+    title->setStyleSheet("font-weight: 600;");
+    title->setWordWrap(true);
+    layout->addWidget(title);
+    const auto linked = instances->getLinkedInstancesById(id);
+    auto* hint = new QLabel(linked.isEmpty() ? tr("This moves its worlds, mods, and settings to the Trash.")
+                                           : tr("Linked instances may lose access to files: %1.").arg(linked.join(", ")), panel);
+    hint->setTextFormat(Qt::PlainText);
+    hint->setStyleSheet("color: #c3beca;");
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+
+    auto* controls = new QHBoxLayout;
+    controls->addStretch();
+    auto* cancel = new GalleryButton(tr("Cancel"), panel);
+    auto* move = new GalleryButton(QIcon(":/icons/flat_white/scalable/delete.svg"), tr("Move to Trash"), panel);
+    move->setStyleSheet("QPushButton { background: #522d36; border: 1px solid #814654; color: #f1dce2; }"
+                        "QPushButton:focus { border-color: #e0a6b6; }");
+    controls->addWidget(cancel);
+    controls->addWidget(move);
+    layout->addLayout(controls);
+    connect(cancel, &QPushButton::clicked, panel, [this] { dismissPanel(); });
+    connect(move, &QPushButton::clicked, panel, [this, instances, id, canTrash, hint, move, linked] {
+        if (!canTrash()) {
+            hint->setText(tr("Close the running game before moving this instance to the Trash."));
+            move->setEnabled(false);
             return;
-        if (!instances->trashInstance(id))
-            QMessageBox::warning(window(), tr("Couldn’t Move Instance"), tr("Stellar couldn’t move this instance to the Trash."));
+        }
+        if (linked != instances->getLinkedInstancesById(id)) {
+            trashInstance(id);
+            return;
+        }
+        if (instances->trashInstance(id))
+            dismissPanel();
+        else
+            hint->setText(tr("Stellar couldn’t move this instance to the Trash."));
     });
-    confirmation->open();
+    placePanel();
+    cancel->setFocus();
 }
 
 void StellarGallery::editInstance(const QString& id)
@@ -1738,6 +1782,23 @@ void StellarGallery::editInstance(const QString& id)
     auto* instance = APPLICATION->instances()->getInstanceById(id);
     if (!instance)
         return;
+    if (instance->isHorizon()) {
+        auto* panel = makePanel(tr("Horizon Instance"));
+        panel->setFixedWidth(310);
+        auto* setup = new GalleryButton(tr("Open Horizon Setup"), panel);
+        auto* folder = new GalleryButton(tr("Game Folder"), panel);
+        auto* wallpaper = new GalleryButton(tr("Wallpaper"), panel);
+        for (auto* button : {setup, folder, wallpaper})
+            panel->layout()->addWidget(button);
+        connect(setup, &QPushButton::clicked, panel, [] { APPLICATION->openHorizonSetup(); });
+        connect(folder, &QPushButton::clicked, panel, [path = instance->gameRoot()] {
+            if (QDir().mkpath(path))
+                QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+        });
+        connect(wallpaper, &QPushButton::clicked, panel, [this, id] { showWallpapers(id); });
+        placePanel();
+        return;
+    }
     auto* editor = APPLICATION->showInstanceWindow(instance, "version", window());
     editor->setWallpaperAction([gallery = QPointer(this), editor = QPointer(editor), id] {
         if (gallery && editor && editor->close()) {
@@ -1992,6 +2053,24 @@ void StellarGallery::showCreator()
     name->setAccessibleName(tr("Instance name"));
     name->setMaxLength(80);
     layout->addWidget(name);
+    auto* engineChoice = new QButtonGroup(panel);
+    auto* javaEngine = new GalleryButton(tr("Minecraft Java"), panel);
+    auto* horizonEngine = new GalleryButton(tr("Horizon · Rust"), panel);
+    javaEngine->setCheckable(true);
+    horizonEngine->setCheckable(true);
+    engineChoice->addButton(javaEngine);
+    engineChoice->addButton(horizonEngine);
+    javaEngine->setChecked(true);
+    const auto choiceStyle = QStringLiteral("QPushButton:checked { background: palette(highlight); color: palette(highlighted-text); }");
+    javaEngine->setStyleSheet(choiceStyle);
+    horizonEngine->setStyleSheet(choiceStyle);
+    auto* engines = new QHBoxLayout;
+    auto* engineLabel = new QLabel(tr("Engine"), panel);
+    engineLabel->setFixedWidth(78);
+    engines->addWidget(engineLabel);
+    engines->addWidget(javaEngine, 1);
+    engines->addWidget(horizonEngine, 1);
+    layout->addLayout(engines);
     auto* version = new QComboBox(panel);
     version->setAccessibleName(tr("Minecraft version"));
     version->setMaxVisibleItems(10);
@@ -2010,15 +2089,25 @@ void StellarGallery::showCreator()
     };
     field(tr("Minecraft"), version);
     field(tr("Loader"), loader);
+    auto* horizonHint = new QLabel(tr("Horizon runs Minecraft 26.3 with its own launcher and sign-in."), panel);
+    horizonHint->setWordWrap(true);
+    horizonHint->hide();
+    layout->addWidget(horizonHint);
     auto* compatible = new QCheckBox(tr("Add compatible performance mods"), panel);
     compatible->setToolTip(tr("Stellar selects matching stable builds of Sodium, Lithium and FerriteCore for this Fabric instance."));
     compatible->setChecked(true);
     compatible->hide();
     layout->addWidget(compatible);
-    connect(loader, &QComboBox::currentIndexChanged, panel, [compatible, panel](int index) {
-        compatible->setVisible(index == 1);
+    const auto updateEngine = [panel, horizonEngine, version, loader, compatible, horizonHint] {
+        const bool horizon = horizonEngine->isChecked();
+        version->setEnabled(!horizon);
+        loader->setEnabled(!horizon);
+        compatible->setVisible(!horizon && loader->currentIndex() == 1);
+        horizonHint->setVisible(horizon);
         panel->adjustSize();
-    });
+    };
+    connect(horizonEngine, &QPushButton::toggled, panel, updateEngine);
+    connect(loader, &QComboBox::currentIndexChanged, panel, updateEngine);
     auto* controls = new QHBoxLayout;
     auto* import = new GalleryButton(tr("Import…"), panel);
     auto* advanced = new GalleryButton(tr("More Options…"), panel);
@@ -2034,26 +2123,33 @@ void StellarGallery::showCreator()
     const auto java = APPLICATION->metadataIndex()->get("net.minecraft");
     const QString fabricId = "net.fabricmc.fabric-loader";
     const auto fabric = APPLICATION->metadataIndex()->get(fabricId);
-    const auto validate = [version, loader, submit, fabric] {
+    const auto validate = [horizonEngine, version, loader, submit, java, fabric] {
+        if (horizonEngine->isChecked()) {
+            submit->setEnabled(bool(java->getVersion("26.3")));
+            return;
+        }
         const auto selected = version->currentData().toString();
         submit->setEnabled(!selected.isEmpty() &&
                            (loader->currentIndex() == 0 || (Version(selected) >= Version("1.14") && fabric->getRecommended())));
     };
+    connect(horizonEngine, &QPushButton::toggled, panel, validate);
     connect(version, &QComboBox::currentIndexChanged, panel, validate);
     connect(loader, &QComboBox::currentIndexChanged, panel, validate);
     connect(import, &QPushButton::clicked, panel, [this] { showImport(); });
     connect(advanced, &QPushButton::clicked, panel, [this] { dismissPanel(); m_actions.create(); });
     connect(name, &QLineEdit::returnPressed, submit, &QPushButton::click);
-    connect(submit, &QPushButton::clicked, panel, [this, name, version, loader, java, fabric, fabricId, compatible] {
-        auto game = java->getVersion(version->currentData().toString());
+    connect(submit, &QPushButton::clicked, panel, [this, horizonEngine, name, version, loader, java, fabric, fabricId, compatible] {
+        const bool horizon = horizonEngine->isChecked();
+        auto game = java->getVersion(horizon ? QStringLiteral("26.3") : version->currentData().toString());
         if (!game)
             return;
-        VanillaCreationTask* creation = loader->currentIndex() == 0 ? new VanillaCreationTask(game) :
+        VanillaCreationTask* creation = horizon || loader->currentIndex() == 0 ? new VanillaCreationTask(game) :
                                         new VanillaCreationTask(game, fabricId, fabric->getRecommended());
         auto title = name->text().trimmed();
         if (title.isEmpty())
-            title = tr("Minecraft %1").arg(game->descriptor());
-        creation->setPerformanceMods(loader->currentIndex() == 1 && compatible->isChecked());
+            title = horizon ? tr("Horizon %1").arg(game->descriptor()) : tr("Minecraft %1").arg(game->descriptor());
+        creation->setHorizon(horizon);
+        creation->setPerformanceMods(!horizon && loader->currentIndex() == 1 && compatible->isChecked());
         creation->setName(title);
         creation->setOriginalName(title, game->descriptor());
         creation->setIcon("default");
@@ -2338,7 +2434,7 @@ void StellarGallery::showPreferences()
            {{tr("Subtle progress"), "progress"}, {tr("Wallpaper wave"), "wave"}, {tr("Wallpaper fade"), "fade"},
             {tr("Horizontal wipe"), "wipe"}, {tr("Iris reveal"), "iris"}, {tr("Status only"), "off"}});
     select(behavior, tr("Loader filter"), "StellarLoaderFilter",
-           {{tr("All loaders"), ""}, {tr("Vanilla"), "Vanilla"}, {"Fabric", "Fabric"}, {"Forge", "Forge"},
+           {{tr("All loaders"), ""}, {tr("Vanilla"), "Vanilla"}, {tr("Horizon"), "Horizon"}, {"Fabric", "Fabric"}, {"Forge", "Forge"},
             {"NeoForge", "NeoForge"}, {"Quilt", "Quilt"}, {"LiteLoader", "LiteLoader"}}, [this] { rebuild(); });
     check(behavior, tr("Fullscreen on launch"), "StellarFillScreen");
     check(behavior, tr("Match mods on version change"), "StellarAutoMatchMods");

@@ -12,6 +12,7 @@ class VanillaCreationTask final : public InstanceTask {
     VanillaCreationTask(BaseVersion::Ptr version, QString loader, BaseVersion::Ptr loaderVersion);
 
     void executeTask() override;
+    void setHorizon(bool enabled) { m_horizon = enabled; }
     void setPerformanceMods(bool enabled) { m_performanceMods = enabled; }
 
    private:
@@ -19,6 +20,7 @@ class VanillaCreationTask final : public InstanceTask {
     std::unique_ptr<MinecraftInstance> m_instance;
     Task::Ptr m_modTask;
     bool m_performanceMods = false;
+    bool m_horizon = false;
 
     // Version to update to / create of the instance.
     BaseVersion::Ptr m_version;

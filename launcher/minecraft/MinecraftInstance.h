@@ -91,6 +91,7 @@ class MinecraftInstance : public BaseInstance {
     QString instanceConfigFolder() const override;
 
     // Path to the instance's minecraft directory.
+    bool isHorizon() const;
     QString gameRoot() const override;
 
     // Path to the instance's minecraft bin directory.

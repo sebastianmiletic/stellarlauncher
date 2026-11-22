@@ -218,6 +218,8 @@ class Application : public QApplication {
                 shared_qobject_ptr<MinecraftAccount> accountToUse = nullptr,
                 const QString& offlineName = QString());
     bool kill(BaseInstance* instance);
+    QString horizonLauncher() const;
+    void openHorizonSetup();
     static void closeCurrentWindow();
 
    private slots:
@@ -234,6 +236,7 @@ class Application : public QApplication {
     void showFatalErrorMessage(const QString& title, const QString& content);
 
    private:
+    bool launchHorizon(MinecraftInstance* instance);
     void addRunningInstance();
     void subRunningInstance();
     bool shouldExitNow() const;
