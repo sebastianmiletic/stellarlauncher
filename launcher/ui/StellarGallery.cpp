@@ -1054,7 +1054,26 @@ StellarGallery::StellarGallery(Actions actions, QWidget* parent)
     connect(list, &QAbstractItemModel::rowsInserted, this, queueRefresh);
     connect(list, &QAbstractItemModel::rowsRemoved, this, queueRefresh);
     connect(list, &QAbstractItemModel::dataChanged, this, queueRefresh);
-    connect(list, &InstanceList::instanceSelectRequest, this, [this](const QString& id) {
+    connect(list, &InstanceList::instanceSelectRequest, this, [this, list](const QString& id) {
+        const auto* instance = list->getInstanceById(id);
+        if (m_creation && instance && instance->isHorizon()) {
+            auto* settings = APPLICATION->settings();
+            const auto filter = settings->get("StellarLoaderFilter").toString();
+            if (!filter.isEmpty() && filter != QStringLiteral("Horizon"))
+                settings->set("StellarLoaderFilter", QString());
+            m_selected = id;
+            m_saveSelection->start();
+            QTimer::singleShot(0, this, [this, id, progress = QPointer(m_panel)] {
+                if (m_panel != progress)
+                    return;
+                if (progress)
+                    dismissPanel();
+                if (!m_ids.contains(id))
+                    rebuild();
+                openInstance(id);
+            });
+            return;
+        }
         if (m_ids.contains(id))
             selectInstance(id);
         else
