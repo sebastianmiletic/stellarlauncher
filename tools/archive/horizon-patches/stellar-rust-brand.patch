@@ -1,0 +1,87 @@
+--- a/crates/horizon-client/src/title/draw.rs
++++ b/crates/horizon-client/src/title/draw.rs
+@@ -153,7 +153,7 @@
+                         ];
+                     }
+                 }
+-                let version = format!("Horizon {} (Rust)", horizon_core::VANILLA_VERSION);
++                let version = format!("{} · Rust", horizon_core::VANILLA_VERSION);
+                 batch.text(atlas, &version, 2.0, h - 10.0, u32::MAX, true);
+                 // A nightly names its build in the top-left corner, the one spot no button reaches at any GUI
+                 // scale, so screenshots and reports say which build they come from.
+--- a/crates/horizon-client/src/game/runtime/window_handler.rs
++++ b/crates/horizon-client/src/game/runtime/window_handler.rs
+@@ -388,11 +388,12 @@
+         }
+         debug_keys::warm_debug_cpu();
+         // The Window constructor: created fullscreen when options.txt or --fullscreen says so.
+-        let fullscreen = self.settings.fullscreen || self.options.fullscreen;
++        let fit = std::env::var_os("STELLAR_RUST_FIT_WINDOW").is_some();
++        let fullscreen = !fit && (self.settings.fullscreen || self.options.fullscreen);
+         let size = self.options.window_size.map(f64::from);
+         self.fullscreen = horizon_client::window::FullscreenState::new(fullscreen);
+         let attributes =
+-            horizon_client::window::with_icon(Window::default_attributes().with_title("Horizon"));
++            horizon_client::window::with_icon(Window::default_attributes().with_title("Stellar Minecraft"));
+         // Wayland names the window by its app id, which the horizon.desktop entry matches.
+         #[cfg(target_os = "linux")]
+         let attributes = winit::platform::wayland::WindowAttributesExtWayland::with_name(
+@@ -408,6 +409,7 @@
+         let window = match event_loop.create_window(
+             attributes
+                 .with_inner_size(winit::dpi::LogicalSize::new(size[0], size[1]))
++                .with_maximized(fit)
+                 .with_fullscreen(fullscreen.then_some(winit::window::Fullscreen::Borderless(None)))
+                 .with_visible(!self.options.offscreen)
+                 .with_active(!agent_started),
+--- a/crates/horizon-client/src/game/runtime/loading_screen.rs
++++ b/crates/horizon-client/src/game/runtime/loading_screen.rs
+@@ -104,7 +104,7 @@
+             .map(f64::from);
+         self.fullscreen = horizon_client::window::FullscreenState::new(fullscreen);
+         let attributes =
+-            horizon_client::window::with_icon(Window::default_attributes().with_title("Horizon"));
++            horizon_client::window::with_icon(Window::default_attributes().with_title("Stellar Minecraft"));
+         // Wayland names the window by its app id, which the horizon.desktop entry matches.
+         #[cfg(target_os = "linux")]
+         let attributes = winit::platform::wayland::WindowAttributesExtWayland::with_name(
+--- a/crates/horizon-client/src/game/runtime/no_resources.rs
++++ b/crates/horizon-client/src/game/runtime/no_resources.rs
+@@ -104,7 +104,7 @@
+             return;
+         }
+         let attributes =
+-            horizon_client::window::with_icon(Window::default_attributes().with_title("Horizon"))
++            horizon_client::window::with_icon(Window::default_attributes().with_title("Stellar Minecraft"))
+                 .with_inner_size(winit::dpi::LogicalSize::new(1040.0, 700.0));
+         let made = event_loop
+             .create_window(attributes)
+--- a/crates/horizon-client/src/game/runtime/split/windows.rs
++++ b/crates/horizon-client/src/game/runtime/split/windows.rs
+@@ -534,7 +534,7 @@
+                 // Its own title for a moment: `above_menu_bar` finds it by it.
+                 Some((at, size)) => {
+                     let attributes = attributes
+-                        .with_title(format!("Horizon {key}"))
++                        .with_title(format!("Stellar Minecraft {key}"))
+                         .with_decorations(false)
+                         .with_position(at)
+                         .with_inner_size(size);
+@@ -562,7 +562,7 @@
+                             }
+                         }
+                     }
+-                    .with_title("Horizon")
++                    .with_title("Stellar Minecraft")
+                 }
+             };
+             let made = event_loop
+@@ -582,7 +582,7 @@
+                 let _ = window.request_inner_size(size);
+                 window.set_outer_position(at);
+                 #[cfg(target_os = "macos")]
+-                above_menu_bar(&format!("Horizon {key}"));
++                above_menu_bar(&format!("Stellar Minecraft {key}"));
+             }
+             match made {
+                 Ok((window, compositor)) => {
