@@ -23,7 +23,7 @@ __attribute__((constructor)) static void useStellarWindowName()
             if (std::getenv("STELLAR_RUST_FIT_WINDOW")) {
                 [notifications addObserverForName:NSWindowDidBecomeMainNotification object:nil queue:nil usingBlock:^(NSNotification* event) {
                     NSWindow* window = event.object;
-                    static NSHashTable<NSWindow*>* fitted = [NSHashTable weakObjectsHashTable];
+                    static NSHashTable<NSWindow*>* fitted = [[NSHashTable alloc] initWithOptions:NSPointerFunctionsWeakMemory capacity:1];
                     if (window.screen && ![fitted containsObject:window] && (window.styleMask & NSWindowStyleMaskResizable)) {
                         [fitted addObject:window];
                         [window setFrame:window.screen.visibleFrame display:YES];

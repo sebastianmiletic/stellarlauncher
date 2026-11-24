@@ -468,13 +468,6 @@ void PrismUpdaterApp::run()
                                                                         "supported when running the flatpak version of Prism Launcher."));
         return;
     }
-    if (needUpdateVal) {
-            result = callAppImageUpdate();
-        }
-        exit(result ? 0 : 1);
-        return;
-    }
-
     if (needUpdateVal || m_forceUpdate || !m_userSelectedVersion.isEmpty()) {
         GitHubRelease updateRelease = latest;
         if (!m_userSelectedVersion.isEmpty()) {

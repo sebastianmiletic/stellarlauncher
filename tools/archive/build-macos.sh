@@ -3,14 +3,20 @@ set -euo pipefail
 source_dir="$(cd "$(dirname "$0")/../.." && pwd)"
 workspace_dir="$(dirname "$source_dir")"
 export PKG_CONFIG_PATH="/opt/homebrew/opt/libarchive/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+update_options=()
+if [[ -n "${ARCHIVE_UPDATE_FEED_URL:-}" ]]; then
+  update_options+=("-DMACOSX_SPARKLE_UPDATE_FEED_URL=$ARCHIVE_UPDATE_FEED_URL")
+fi
+if [[ -n "${ARCHIVE_UPDATE_PUBLIC_KEY:-}" ]]; then
+  update_options+=("-DMACOSX_SPARKLE_UPDATE_PUBLIC_KEY=$ARCHIVE_UPDATE_PUBLIC_KEY")
+fi
 cmake -S "$source_dir" -B "$workspace_dir/build" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DENABLE_LTO=ON -DLauncher_USE_PCH=OFF \
   -DCMAKE_PREFIX_PATH=/opt/homebrew -DCMAKE_INSTALL_PREFIX="$workspace_dir/dist" \
   -DLauncher_BUILD_PLATFORM=archive-macos-arm64 -DBUILD_TESTING=ON \
   -DJava_JAVA_EXECUTABLE=/opt/homebrew/opt/openjdk@17/bin/java \
   -DJava_JAVAC_EXECUTABLE=/opt/homebrew/opt/openjdk@17/bin/javac \
-  -DMACOSX_SPARKLE_UPDATE_FEED_URL="${ARCHIVE_UPDATE_FEED_URL:-}" \
-  -DMACOSX_SPARKLE_UPDATE_PUBLIC_KEY="${ARCHIVE_UPDATE_PUBLIC_KEY:-}" \
+  "${update_options[@]}" \
   -DLauncher_MSA_CLIENT_ID="${ARCHIVE_MSA_CLIENT_ID:-}" \
   -DLauncher_CURSEFORGE_API_KEY="${ARCHIVE_CURSEFORGE_API_KEY:-}"
 cmake --build "$workspace_dir/build" -j "${ARCHIVE_BUILD_JOBS:-6}"

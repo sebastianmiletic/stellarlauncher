@@ -1947,22 +1947,60 @@ void StellarGallery::editInstance(const QString& id)
             panel->close();
             showWallpapers(id);
         });
+        auto* indexer = new QProcess(panel);
+        indexer->setProcessEnvironment(environment);
+        auto projects = std::make_shared<QHash<QString, QString>>();
         auto* packActions = new QHBoxLayout;
+        const auto available = [files, category, projects, process] {
+            if (const auto* item = files->currentItem(); item && process->state() == QProcess::NotRunning) {
+                return category->currentIndex() != 0 ||
+                       projects->contains(QFileInfo(item->data(Qt::UserRole).toString()).fileName());
+            }
+            return false;
+        };
+        connect(indexer, &QProcess::finished, panel, [indexer, projects, files](int code, QProcess::ExitStatus state) {
+            if (code != 0 || state != QProcess::NormalExit)
+                return;
+            const auto entries = QJsonDocument::fromJson(indexer->readAllStandardOutput()).array();
+            projects->clear();
+            for (const auto& value : entries) {
+                const auto entry = value.toObject();
+                const auto file = QFileInfo(entry["file"].toString()).fileName();
+                const auto project = entry["project"].toString();
+                if (!file.isEmpty() && !project.isEmpty() && !project.startsWith('-'))
+                    projects->insert(file, project);
+            }
+            if (const int row = files->currentRow(); row >= 0) {
+                files->setCurrentRow(-1);
+                files->setCurrentRow(row);
+            }
+        });
+        const auto indexProjects = [indexer] {
+            const auto program = APPLICATION->horizonLauncher();
+            if (!program.isEmpty() && indexer->state() == QProcess::NotRunning)
+                indexer->start(program, {"mods", "list", "--json", "--instance", "horizon"});
+        };
+        indexProjects();
+        connect(process, &QProcess::finished, panel, indexProjects);
         for (const auto& [label, command] : QList<QPair<QString, QString>>{
                  {tr("Enable"), "on"}, {tr("Disable"), "off"}, {tr("Trash"), "remove"}}) {
             auto* button = new GalleryButton(label, panel);
             button->setEnabled(false);
-            connect(files, &QListWidget::currentItemChanged, button, [button, category, process](QListWidgetItem* item) {
-                button->setEnabled(item && category->currentIndex() > 0 && process->state() == QProcess::NotRunning);
-            });
-            connect(button, &QPushButton::clicked, panel, [panel, files, category, command, run, process] {
-                const auto* item = files->currentItem();
-                if (!item || process->state() != QProcess::NotRunning)
+            const auto validate = [button, available] { button->setEnabled(available()); };
+            connect(files, &QListWidget::currentItemChanged, button, validate);
+            connect(process, &QProcess::stateChanged, button, validate);
+            connect(button, &QPushButton::clicked, panel, [panel, files, category, command, run, available, projects] {
+                if (!available())
                     return;
-                const auto file = QFileInfo(item->data(Qt::UserRole).toString()).fileName();
-                if (command == "remove" && QMessageBox::question(panel, tr("Move Pack to Trash"), file) != QMessageBox::Yes)
+                const auto file = QFileInfo(files->currentItem()->data(Qt::UserRole).toString()).fileName();
+                if (command == "remove" && QMessageBox::question(panel, tr("Remove Content"), file) != QMessageBox::Yes)
                     return;
-                run({"packs", command, "--instance", "horizon", "--kind", category->currentIndex() == 1 ? "resource" : "shader", file});
+                if (category->currentIndex() == 0) {
+                    const QString operation = command == "on" ? "enable" : command == "off" ? "disable" : "remove";
+                    run({"mods", operation, "--instance", "horizon", projects->value(file)});
+                } else {
+                    run({"packs", command, "--instance", "horizon", "--kind", category->currentIndex() == 1 ? "resource" : "shader", file});
+                }
             });
             packActions->addWidget(button);
         }

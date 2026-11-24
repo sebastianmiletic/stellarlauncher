@@ -7,6 +7,8 @@ from email.utils import format_datetime
 from pathlib import Path
 import plistlib
 import subprocess
+import re
+import tempfile
 from urllib.parse import urlsplit
 from xml.etree import ElementTree as ET
 
@@ -16,7 +18,9 @@ ET.register_namespace("sparkle", SPARKLE)
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--app", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--app", type=Path)
+    source.add_argument("--archive", type=Path, help="Package from the Stellar downloads workflow")
     parser.add_argument("--sparkle-bin", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--release-url", required=True, help="HTTPS release download directory for this version")
@@ -25,22 +29,43 @@ def main():
     if url.scheme != "https" or not url.netloc or url.username or url.password or url.query or url.fragment:
         parser.error("--release-url must be an HTTPS directory without credentials, a query or a fragment")
 
-    app = args.app.resolve()
-    with (app / "Contents/Info.plist").open("rb") as plist:
-        info = plistlib.load(plist)
     public_key = subprocess.check_output(
         [args.sparkle_bin / "generate_keys", "--account", "archivelauncher", "-p"], text=True
     ).strip()
-    if info.get("SUPublicEDKey") != public_key or not info.get("SUFeedURL"):
-        parser.error("Build the app with the Stellar signing public key and update feed first.")
-    subprocess.run(["codesign", "--verify", "--deep", "--strict", app], check=True)
+    architecture = "arm64"
+    if args.archive:
+        archive = args.archive.resolve()
+        match = re.fullmatch(r"StellarLauncher-([0-9]+\.[0-9]+\.[0-9]+)-macOS-(arm64|x86_64)\.zip", archive.name)
+        if not match:
+            parser.error("--archive must be a Stellar macOS package from CI.")
+        version, architecture = match.groups()
 
+    feed = "appcast-intel.xml" if architecture == "x86_64" else "appcast.xml"
+    appcast = args.output / feed
     args.output.mkdir(parents=True, exist_ok=True)
-    version = info["CFBundleShortVersionString"]
-    archive = args.output / f"StellarLauncher-{version}-macOS-arm64.zip"
-    if archive.exists() or (args.output / "appcast.xml").exists():
-        parser.error("Use an empty output directory for this release.")
-    subprocess.run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", app, archive], check=True)
+    if appcast.exists():
+        parser.error(f"{appcast} already exists.")
+
+    with tempfile.TemporaryDirectory(prefix="stellar-sign-") as extracted:
+        if args.archive:
+            subprocess.run(["ditto", "-x", "-k", archive, extracted], check=True)
+            app = Path(extracted) / "Stellar Launcher.app"
+        else:
+            app = args.app.resolve()
+        with (app / "Contents/Info.plist").open("rb") as plist:
+            info = plistlib.load(plist)
+        if info.get("SUPublicEDKey") != public_key or not info.get("SUFeedURL", "").endswith("/" + feed):
+            parser.error("The package must use the release signing key and the correct architecture feed.")
+        subprocess.run(["codesign", "--verify", "--deep", "--strict", "--all-architectures", app], check=True)
+        if args.archive and info["CFBundleShortVersionString"] != version:
+            parser.error("The package version does not match its archive name.")
+        if not args.archive:
+            version = info["CFBundleShortVersionString"]
+            archive = args.output / f"StellarLauncher-{version}-macOS-arm64.zip"
+            if archive.exists():
+                parser.error(f"{archive} already exists.")
+            subprocess.run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", app, archive], check=True)
+
     sign_update = args.sparkle_bin / "sign_update"
     signature = subprocess.check_output([sign_update, "--account", "archivelauncher", "-p", archive], text=True).strip()
     subprocess.run([sign_update, "--account", "archivelauncher", "--verify", archive, signature], check=True)
@@ -60,7 +85,7 @@ def main():
         "type": "application/octet-stream",
     })
     ET.indent(rss)
-    ET.ElementTree(rss).write(args.output / "appcast.xml", encoding="utf-8", xml_declaration=True)
+    ET.ElementTree(rss).write(appcast, encoding="utf-8", xml_declaration=True)
 
 
 if __name__ == "__main__":
