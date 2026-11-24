@@ -1,0 +1,192 @@
+{
+  "format": "horizon-benchmark-report",
+  "version": 1,
+  "kind": "game",
+  "created": "2026-11-23T01:07:08Z",
+  "app": {
+    "name": "horizon-client",
+    "version": "0.1.0"
+  },
+  "hardware": {
+    "os": "macos",
+    "os_version": "27.0",
+    "arch": "aarch64",
+    "cpu": "Apple M4",
+    "cpu_threads": 10,
+    "cpu_cores": 10,
+    "ram_mb": 16384,
+    "storage": "nvme",
+    "form": "laptop",
+    "gpu": {
+      "name": "Apple M4",
+      "vendor": "apple",
+      "driver": "",
+      "backend": "metal",
+      "kind": "integrated"
+    },
+    "display": {
+      "width": 2940,
+      "height": 1912,
+      "scale": 2.0,
+      "refresh_hz": 60
+    }
+  },
+  "conditions": {
+    "scenario": "village",
+    "seed": "1234",
+    "render_distance": 8,
+    "simulation_distance": 5,
+    "window": [
+      2560,
+      1440
+    ],
+    "vsync": false,
+    "offscreen": true,
+    "repeats": 1,
+    "warmup_s": 2.0,
+    "power": "battery",
+    "load_avg_1m": 13.03
+  },
+  "metrics": {
+    "chunks.village.generated_count": {
+      "n": 1,
+      "mean": 329.0,
+      "stdev": null,
+      "min": 329.0,
+      "max": 329.0,
+      "ci95": null
+    },
+    "chunks.village.generated_per_s": {
+      "n": 1,
+      "mean": 184.923,
+      "stdev": null,
+      "min": 184.923,
+      "max": 184.923,
+      "ci95": null
+    },
+    "chunks.village.load_ms": {
+      "n": 1,
+      "mean": 1779.121,
+      "stdev": null,
+      "min": 1779.121,
+      "max": 1779.121,
+      "ci95": null
+    },
+    "chunks.village.meshed_count": {
+      "n": 1,
+      "mean": 6614.0,
+      "stdev": null,
+      "min": 6614.0,
+      "max": 6614.0,
+      "ci95": null
+    },
+    "fps.village.avg_fps": {
+      "n": 1,
+      "mean": 625.643,
+      "stdev": null,
+      "min": 625.643,
+      "max": 625.643,
+      "ci95": null
+    },
+    "fps.village.low_01pct_fps": {
+      "n": 1,
+      "mean": 210.48,
+      "stdev": null,
+      "min": 210.48,
+      "max": 210.48,
+      "ci95": null
+    },
+    "fps.village.low_1pct_fps": {
+      "n": 1,
+      "mean": 265.756,
+      "stdev": null,
+      "min": 265.756,
+      "max": 265.756,
+      "ci95": null
+    },
+    "game.binary_bytes": {
+      "n": 1,
+      "mean": 50816.0,
+      "stdev": null,
+      "min": 50816.0,
+      "max": 50816.0,
+      "ci95": null
+    },
+    "memory.rss_peak_mb": {
+      "n": 1,
+      "mean": 2464.125,
+      "stdev": null,
+      "min": 2464.125,
+      "max": 2464.125,
+      "ci95": null
+    },
+    "memory.rss_steady_mb": {
+      "n": 1,
+      "mean": 2459.359,
+      "stdev": null,
+      "min": 2459.359,
+      "max": 2459.359,
+      "ci95": null
+    },
+    "startup.title_ms": {
+      "n": 1,
+      "mean": 2341.224,
+      "stdev": null,
+      "min": 2341.224,
+      "max": 2341.224,
+      "ci95": null
+    },
+    "startup.world_ms": {
+      "n": 1,
+      "mean": 4375.753,
+      "stdev": null,
+      "min": 4375.753,
+      "max": 4375.753,
+      "ci95": null
+    }
+  },
+  "frames": [
+    {
+      "phase": "village",
+      "repeat": 0,
+      "frames": 7508,
+      "seconds": 12.0,
+      "avg_fps": 625.643,
+      "low_1pct_fps": 265.756,
+      "low_01pct_fps": 210.48,
+      "p50_ms": 1.542,
+      "p95_ms": 2.083,
+      "p99_ms": 2.981,
+      "p999_ms": 4.249,
+      "max_ms": 6.446,
+      "cpu_p50_ms": 0.293,
+      "gpu_p50_ms": 1.478,
+      "histogram": [
+        9,
+        7053,
+        372,
+        59,
+        13,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

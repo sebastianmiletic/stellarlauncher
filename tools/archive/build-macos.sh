@@ -26,6 +26,8 @@ if [[ -n "$empty_library" ]]; then
   exit 1
 fi
 codesign --force --deep --sign - "$app"
+bash "$source_dir/tools/archive/package-rust-engine.sh" macOS "$(uname -m)" "$stage"
+codesign --force --sign - "$app"
 codesign --verify --deep --strict "$app"
 "$app/Contents/MacOS/ArchiveLauncher" --version
 

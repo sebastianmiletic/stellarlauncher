@@ -2,7 +2,7 @@
 
 <img src="tools/stellar-prism/screenshots/stellar-logo.png" width="96" alt="Stellar Launcher logo">
 
-[Download Stellar Launcher for Apple silicon](https://github.com/sebastianmiletic/stellarlauncher/releases/latest)
+[Download for macOS, Windows, or Linux](https://github.com/sebastianmiletic/stellarlauncher/releases/latest)
 
 ![Stellar's wallpaper gallery with three sample Minecraft instances](tools/stellar-prism/screenshots/gallery.png)
 
@@ -19,10 +19,33 @@ Stellar Launcher is a compact Minecraft Java launcher built on Prism Launcher’
 | --- | --- |
 | macOS on Apple silicon | Download the ARM64 ZIP from Releases, extract it, and move **Stellar Launcher.app** into **Applications**. This build uses an ad-hoc signature. |
 | macOS on Intel | Download the Intel x86-64 ZIP. Extract it and move the app into **Applications**. |
-| Windows | Download the portable ZIP that matches your system (x86-64 or ARM64). Extract the entire ZIP before launching the included executable. |
-| Linux | Download the AppImage that matches your system (x86-64 or ARM64). Make the matching file executable with `chmod +x` and open it. The Linux builds use Ubuntu 24.04 runners, so compatibility with older distributions varies. |
+| Windows x86-64 or ARM64 | Download the matching portable ZIP. Extract the entire archive before launching the included executable. |
+| Linux x86-64 or ARM64 | Download the matching AppImage, make it executable with `chmod +x`, and open it. The Linux builds use Ubuntu 24.04. |
 
 [Releases](https://github.com/sebastianmiletic/stellarlauncher/releases) lists published downloads. [Stellar downloads](https://github.com/sebastianmiletic/stellarlauncher/actions/workflows/stellar-downloads.yml) lists build jobs and workflow artifacts.
+
+## Rust Minecraft
+
+Choose **Horizon · Rust** when creating an instance. The packaged app includes the Horizon command-line tools and starts the game directly from Stellar. A separate Horizon Launcher installation is unnecessary.
+
+On first use, open **Edit → Rust Setup** from the instance. Download the engine, sign in with a Microsoft account that owns Minecraft Java Edition, then choose **Download Game Assets**. After that, use **Play**. The game engine and assets are downloaded on demand, and Rust instances keep their existing worlds, settings, and content.
+
+Rust engine availability depends on Horizon's published game builds. Current upstream releases provide a native game for macOS on Apple silicon, Windows x86-64, and Linux x86-64. The Windows ARM64, macOS Intel, and Linux ARM64 Stellar packages support Java. The bundled Horizon helper includes its license and exact source reference. [Upstream game releases](https://github.com/horizon-rust/horizon/releases) · [Horizon helper source](https://github.com/horizon-rust/horizon/tree/65686f40f394cbd80771b18cd92d911543c9c967)
+
+**Daybreak Sky · Stellar** lets Daybreak draw the sky while Horizon applies its own terrain lighting. With **Fullbright** enabled in Horizon’s settings, blocks use the same white lightmap as Fullbright UB and the sky still darkens at night. Horizon applies Fullbright in singleplayer, LAN worlds you host, and Replay Studio. The sky pack is attached to the release and can be imported from **Edit → Import Resource or Shader Pack**.
+
+| Fullbright at noon | Fullbright at midnight |
+| --- | --- |
+| ![A bright stone platform under the daytime sky](tools/stellar-prism/screenshots/rust-fullbright-noon.jpg) | ![The same platform still lit beneath a dark, starry sky](tools/stellar-prism/screenshots/rust-fullbright-midnight.jpg) |
+
+### MacBook Air performance
+
+| Test | Average | 1% low |
+| --- | ---: | ---: |
+| Horizon village benchmark | 626 FPS | 266 FPS |
+| Short modded local-world run | 624 FPS | 162 FPS |
+
+The tests used an Apple M4 MacBook Air (Mac16,12, 10 CPU cores, 8 GPU cores, 16 GB RAM) with macOS 27.0 and Metal. Both ran locally at 2560×1440 output with VSync off. The village test used 8 render chunks, 5 simulation chunks, and 75% render scale on battery power. The modded run used 6 render chunks and 65% render scale. FPS varies with the world, shader effects, and background load. These measurements are Rust-only. [Village benchmark data](tools/stellar-prism/benchmarks/rust-village-m4.json)
 
 ## Set up Microsoft sign-in
 

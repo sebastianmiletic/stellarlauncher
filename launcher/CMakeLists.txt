@@ -1178,6 +1178,7 @@ if (APPLE)
 
         macsandbox/SecurityBookmarkFileAccess.h
         macsandbox/SecurityBookmarkFileAccess.mm
+        minecraft/StellarHorizonMac.mm
     )
 endif()
 
@@ -1300,6 +1301,7 @@ if(APPLE)
     endif()
 
     target_link_libraries(Launcher_logic
+        "-framework AppKit"
         "-framework Carbon"
         "-framework Foundation"
         "-framework ApplicationServices"
@@ -1323,6 +1325,11 @@ target_link_libraries(${Launcher_Name} Launcher_logic)
 
 if(APPLE)
     set_target_properties(${Launcher_Name} PROPERTIES OUTPUT_NAME "${Launcher_Name}")
+    add_library(StellarRustWindow SHARED minecraft/StellarRustWindow.mm)
+    set_target_properties(StellarRustWindow PROPERTIES PREFIX "" AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
+    target_link_libraries(StellarRustWindow PRIVATE "-framework AppKit")
+    add_dependencies(${Launcher_Name} StellarRustWindow)
+    install(TARGETS StellarRustWindow LIBRARY DESTINATION ${FRAMEWORK_DEST_DIR} COMPONENT Runtime)
 elseif(DEFINED Launcher_APP_BINARY_NAME)
     set_target_properties(${Launcher_Name} PROPERTIES OUTPUT_NAME "${Launcher_APP_BINARY_NAME}")
 endif()

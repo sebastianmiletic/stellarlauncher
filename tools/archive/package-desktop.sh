@@ -10,19 +10,23 @@ mkdir -p "$downloads"
 
 case "$STELLAR_PLATFORM" in
     macOS)
+        codesign --force --deep --sign - "$stage/ArchiveLauncher.app"
+        bash tools/archive/package-rust-engine.sh "$STELLAR_PLATFORM" "$STELLAR_ARCH" "$stage"
         mv "$stage/ArchiveLauncher.app" "$stage/Stellar Launcher.app"
         app="$stage/Stellar Launcher.app"
-        codesign --force --deep --sign - "$app"
+        codesign --force --sign - "$app"
         codesign --verify --deep --strict "$app"
         "$app/Contents/MacOS/ArchiveLauncher" --version
         ditto -c -k --keepParent "$app" "$downloads/$product.zip"
         ;;
     Windows)
+        bash tools/archive/package-rust-engine.sh "$STELLAR_PLATFORM" "$STELLAR_ARCH" "$stage"
         cmake --install build --component portable
         STELLAR_ARCHIVE="$downloads/$product.zip" pwsh -NoProfile -Command \
             'Compress-Archive -Path stage/* -DestinationPath $env:STELLAR_ARCHIVE'
         ;;
     Linux)
+        bash tools/archive/package-rust-engine.sh "$STELLAR_PLATFORM" "$STELLAR_ARCH" "$stage"
         executable="$stage/bin/archivelauncher"
         "$executable" --version
         desktop="app.archivelauncher.ArchiveLauncher"

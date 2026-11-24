@@ -94,7 +94,10 @@
 #include <QAccessible>
 #include <QCommandLineParser>
 #include <QDebug>
+#include <QDialog>
 #include <QDir>
+#include <QLabel>
+#include <QPlainTextEdit>
 #include <QProcess>
 #include <QPushButton>
 #include <QStandardPaths>
@@ -112,6 +115,7 @@
 #include <QStyleFactory>
 #include <QStyleHints>
 #include <QTranslator>
+#include <QVBoxLayout>
 #include <QWindow>
 #include <utility>
 
@@ -843,7 +847,6 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("EditInstanceOnDoubleClick", false);
         m_settings->registerSetting("SelectedInstance", QString());
         m_settings->registerSetting("StellarLaunchAnimation", "wave");
-        m_settings->registerSetting("StellarHorizonLauncher", QString());
         m_settings->registerSetting("StellarAutoMatchMods", true);
         m_settings->registerSetting("StellarFillScreen", false);
         m_settings->registerSetting("StellarOpeningAnimation", true);
@@ -1741,47 +1744,90 @@ bool Application::launch(MinecraftInstance* instance,
 
 QString Application::horizonLauncher() const
 {
-    const auto configured = settings()->get("StellarHorizonLauncher").toString();
-    if (QFileInfo(configured).isExecutable() && QFileInfo(configured).isFile())
-        return configured;
-#ifdef Q_OS_MACOS
-    for (const auto& root : {QStringLiteral("/Applications"), QDir::home().filePath("Applications")}) {
-        auto path = QDir(root).filePath("Horizon.app/Contents/MacOS/horizon-launcher");
-        if (QFileInfo(path).isExecutable())
-            return path;
-    }
+#if defined(Q_OS_MACOS)
+    const auto path = QDir(applicationDirPath()).filePath("../Helpers/Horizon.app/Contents/MacOS/horizon-launcher");
+#elif defined(Q_OS_WIN)
+    const auto path = QDir(applicationDirPath()).filePath("horizon-launcher.exe");
+#else
+    const auto appImage = qEnvironmentVariable("APPDIR");
+    const auto root = appImage.isEmpty() ? QDir(applicationDirPath()).absoluteFilePath("..") : appImage;
+    const auto path = QDir(root).filePath("libexec/stellar/horizon-launcher");
 #endif
-    return QStandardPaths::findExecutable("horizon-launcher");
+    const QFileInfo executable(path);
+    return executable.isFile() && executable.isExecutable() ? executable.absoluteFilePath() : QString();
 }
 
 void Application::openHorizonSetup()
 {
     const auto program = horizonLauncher();
-    if (!program.isEmpty()) {
-        QProcess::startDetached(program, {});
+    if (program.isEmpty()) {
+        QMessageBox::information(m_mainWindow, tr("Rust Engine Unavailable"),
+                                 tr("This Stellar build doesn’t include the Rust engine tools."));
         return;
     }
-    auto* setup = new QMessageBox(QMessageBox::Information, tr("Set Up Horizon"),
-        tr("Install Horizon’s launcher to prepare the Rust engine and sign in with your Minecraft account."),
-        QMessageBox::Cancel, m_mainWindow);
-    auto* download = setup->addButton(tr("Download Horizon"), QMessageBox::ActionRole);
-    auto* locate = setup->addButton(tr("Locate Launcher…"), QMessageBox::ActionRole);
+
+    auto* setup = new QDialog(m_mainWindow);
+    setup->setWindowTitle(tr("Set Up Rust Minecraft"));
     setup->setAttribute(Qt::WA_DeleteOnClose);
-    connect(setup, &QMessageBox::finished, this, [this, setup, download, locate] {
-        if (setup->clickedButton() == download)
-            QDesktopServices::openUrl(QUrl("https://playhorizon.dev/download"));
-        if (setup->clickedButton() != locate)
-            return;
-        auto path = QFileDialog::getOpenFileName(m_mainWindow, tr("Locate Horizon Launcher"));
-#ifdef Q_OS_MACOS
-        if (path.endsWith(".app"))
-            path = QDir(path).filePath("Contents/MacOS/horizon-launcher");
-#endif
-        if (QFileInfo(path).isExecutable() && QFileInfo(path).isFile())
-            settings()->set("StellarHorizonLauncher", path);
+    setup->resize(460, 300);
+    auto* layout = new QVBoxLayout(setup);
+    auto* hint = new QLabel(tr("Download the engine, sign in with a Microsoft account that owns Java Edition, then retry Play."), setup);
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+    auto* output = new QPlainTextEdit(setup);
+    output->setReadOnly(true);
+    output->setMaximumBlockCount(200);
+    output->setAccessibleName(tr("Rust setup output"));
+    layout->addWidget(output);
+    auto* download = new QPushButton(tr("Download Engine"), setup);
+    auto* signIn = new QPushButton(tr("Sign In with Microsoft"), setup);
+    auto* prepare = new QPushButton(tr("Download Game Assets"), setup);
+    auto* browser = new QPushButton(tr("Open Microsoft Sign-In Page"), setup);
+    browser->hide();
+    for (auto* button : {download, signIn, prepare, browser})
+        layout->addWidget(button);
+
+    auto* process = new QProcess(setup);
+    auto environment = QProcessEnvironment::systemEnvironment();
+    environment.insert("HORIZON_LAUNCHER_NO_SELF_UPDATE", "1");
+    process->setProcessEnvironment(environment);
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    const auto busy = [download, signIn, prepare](bool running) {
+        for (auto* button : {download, signIn, prepare})
+            button->setEnabled(!running);
+    };
+    const auto run = [process, output, browser, busy, program](const QStringList& arguments) {
+        output->clear();
+        browser->setVisible(arguments == QStringList{"account", "sign-in"});
+        busy(true);
+        process->start(program, arguments);
+    };
+    connect(download, &QPushButton::clicked, setup, [run] { run({"install", "latest"}); });
+    connect(signIn, &QPushButton::clicked, setup, [run] { run({"account", "sign-in"}); });
+    connect(prepare, &QPushButton::clicked, setup, [run] { run({"prepare", "--download"}); });
+    connect(browser, &QPushButton::clicked, setup, [] {
+        QDesktopServices::openUrl(QUrl("https://www.microsoft.com/link"));
+    });
+    connect(process, &QProcess::readyReadStandardOutput, setup, [process, output] {
+        output->moveCursor(QTextCursor::End);
+        output->insertPlainText(QString::fromUtf8(process->readAllStandardOutput()));
+    });
+    connect(process, &QProcess::finished, setup, [busy, output](int code, QProcess::ExitStatus state) {
+        busy(false);
+        output->appendPlainText(code == 0 && state == QProcess::NormalExit ? tr("Done.") : tr("Setup step failed."));
+    });
+    connect(process, &QProcess::errorOccurred, setup, [process, busy, output](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart) {
+            busy(false);
+            output->appendPlainText(process->errorString());
+        }
     });
     setup->open();
 }
+
+#ifdef Q_OS_MACOS
+void setStellarHorizonGameBranding(const QString& version);
+#endif
 
 bool Application::launchHorizon(MinecraftInstance* instance)
 {
@@ -1801,6 +1847,16 @@ bool Application::launchHorizon(MinecraftInstance* instance)
     auto* process = new QProcess(this);
     auto environment = QProcessEnvironment::systemEnvironment();
     environment.insert("HORIZON_HOME", QDir(instance->gameRoot()).absolutePath());
+    environment.insert("HORIZON_LAUNCHER_NO_SELF_UPDATE", "1");
+#ifdef Q_OS_MACOS
+    // The observer runs only in the Rust client, and requires no accessibility permission.
+    const QFileInfo windowObserver(QDir(applicationDirPath()).filePath("../Frameworks/StellarRustWindow.dylib"));
+    if (windowObserver.isFile()) {
+        const auto existing = environment.value("DYLD_INSERT_LIBRARIES");
+        const auto observer = windowObserver.absoluteFilePath();
+        environment.insert("DYLD_INSERT_LIBRARIES", existing.isEmpty() ? observer : existing + ':' + observer);
+    }
+#endif
     process->setProcessEnvironment(environment);
     process->setProcessChannelMode(QProcess::MergedChannels);
     process->setStandardOutputFile(logPath);
@@ -1818,11 +1874,11 @@ bool Application::launchHorizon(MinecraftInstance* instance)
                 log.seek(qMax(qint64(0), log.size() - 1000));
                 detail = QString::fromUtf8(log.readAll()).trimmed();
             }
-            auto* notice = new QMessageBox(QMessageBox::Warning, tr("Horizon Didn’t Start"),
-                tr("Open Horizon to finish setup, then try Play again."), QMessageBox::Close, m_mainWindow);
+            auto* notice = new QMessageBox(QMessageBox::Warning, tr("Rust Minecraft Didn’t Start"),
+                tr("Check the details or finish Rust setup in Stellar."), QMessageBox::Close, m_mainWindow);
             notice->setTextFormat(Qt::PlainText);
             notice->setDetailedText(detail);
-            auto* setup = notice->addButton(tr("Open Horizon"), QMessageBox::ActionRole);
+            auto* setup = notice->addButton(tr("Rust Setup"), QMessageBox::ActionRole);
             notice->setAttribute(Qt::WA_DeleteOnClose);
             connect(notice, &QMessageBox::finished, this, [this, notice, setup] {
                 if (notice->clickedButton() == setup)
@@ -1845,6 +1901,9 @@ bool Application::launchHorizon(MinecraftInstance* instance)
     });
     QStringList arguments{"play", "--instance", "horizon"};
     const auto version = instance->settings()->get("StellarHorizonVersion").toString();
+#ifdef Q_OS_MACOS
+    setStellarHorizonGameBranding(version);
+#endif
     if (!version.isEmpty())
         arguments << "--version" << version;
     process->start(program, arguments);

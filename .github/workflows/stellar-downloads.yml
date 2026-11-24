@@ -8,6 +8,10 @@ on:
         type: choice
         default: All
         options: [All, macOS, Windows, Linux]
+      publish:
+        description: Publish a GitHub Release after all platforms pass
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -125,3 +129,39 @@ jobs:
           path: downloads/*
           if-no-files-found: error
           compression-level: 0
+
+  release:
+    name: Publish downloads
+    if: inputs.publish && inputs.platform == 'All'
+    needs: package
+    runs-on: ubuntu-slim
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: StellarLauncher-*
+          path: downloads
+          merge-multiple: true
+      - name: Publish the verified packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(sed -nE 's/^set\(Launcher_VERSION_(MAJOR|MINOR|PATCH) ([0-9]+)\)$/\2/p' CMakeLists.txt | paste -sd . -)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          for platform in macOS Windows; do
+            for arch in arm64 x86_64; do
+              test -s "downloads/StellarLauncher-$version-$platform-$arch.zip"
+              test -s "downloads/StellarLauncher-$version-$platform-$arch.zip.sha256"
+            done
+          done
+          for arch in aarch64 x86_64; do
+            test -s "downloads/StellarLauncher-$version-Linux-$arch.AppImage"
+            test -s "downloads/StellarLauncher-$version-Linux-$arch.AppImage.sha256"
+          done
+          gh release create "stellar-v$version" downloads/* program_info/stellar-daybreak-sky.hshader \
+            --target "$GITHUB_SHA" --title "Stellar Launcher $version" --generate-notes

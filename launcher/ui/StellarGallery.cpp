@@ -39,7 +39,9 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPropertyAnimation>
+#include <QProcess>
 #include <QProgressBar>
+#include <QRegularExpression>
 #include <QPushButton>
 #include <QSaveFile>
 #include <QSignalBlocker>
@@ -1803,12 +1805,88 @@ void StellarGallery::editInstance(const QString& id)
         return;
     if (instance->isHorizon()) {
         auto* panel = makePanel(tr("Horizon Instance"));
-        panel->setFixedWidth(310);
-        auto* setup = new GalleryButton(tr("Open Horizon Setup"), panel);
+        panel->setFixedWidth(400);
+        auto* project = new QLineEdit(panel);
+        project->setPlaceholderText(tr("Horizon project link or slug"));
+        project->setAccessibleName(tr("Horizon project"));
+        auto* status = new QLabel(panel);
+        status->setWordWrap(true);
+        status->setTextFormat(Qt::PlainText);
+        auto* browse = new GalleryButton(tr("Browse Horizon Content"), panel);
+        auto* install = new GalleryButton(tr("Install Project"), panel);
+        auto* import = new GalleryButton(tr("Import Resource or Shader Pack"), panel);
+        auto* setup = new GalleryButton(tr("Rust Setup"), panel);
         auto* folder = new GalleryButton(tr("Game Folder"), panel);
         auto* wallpaper = new GalleryButton(tr("Wallpaper"), panel);
-        for (auto* button : {setup, folder, wallpaper})
+        panel->layout()->addWidget(project);
+        for (auto* button : {browse, install, import, setup, folder, wallpaper})
             panel->layout()->addWidget(button);
+        panel->layout()->addWidget(status);
+        auto* process = new QProcess(this);
+        auto environment = QProcessEnvironment::systemEnvironment();
+        environment.insert("HORIZON_HOME", QDir(instance->gameRoot()).absolutePath());
+        process->setProcessEnvironment(environment);
+        process->setProcessChannelMode(QProcess::MergedChannels);
+        connect(panel, &QObject::destroyed, process, [process] {
+            if (process->state() == QProcess::NotRunning)
+                process->deleteLater();
+            else
+                connect(process, &QProcess::finished, process, &QObject::deleteLater);
+        });
+        const auto complete = [process, status, install, import](bool success) {
+            const auto detail = QString::fromUtf8(process->readAll()).trimmed().right(240);
+            status->setText(success ? QObject::tr("Added. Packs can be enabled in Horizon’s game options.")
+                                    : detail.isEmpty() ? process->errorString() : detail);
+            install->setEnabled(true);
+            import->setEnabled(true);
+        };
+        connect(process, &QProcess::errorOccurred, panel, [complete](QProcess::ProcessError error) {
+            if (error == QProcess::FailedToStart)
+                complete(false);
+        });
+        connect(process, &QProcess::finished, panel, [complete](int code, QProcess::ExitStatus result) {
+            complete(code == 0 && result == QProcess::NormalExit);
+        });
+        const auto run = [process, status, install, import, current = QPointer(instance)](const QStringList& arguments) {
+            if (!current || current->isRunning()) {
+                status->setText(QObject::tr("Quit Horizon before changing its content."));
+                return;
+            }
+            const auto program = APPLICATION->horizonLauncher();
+            if (program.isEmpty()) {
+                status->setText(QObject::tr("This Stellar build doesn’t include the Rust content tools."));
+                return;
+            }
+            install->setEnabled(false);
+            import->setEnabled(false);
+            status->setText(QObject::tr("Adding content…"));
+            process->start(program, arguments);
+        };
+        connect(browse, &QPushButton::clicked, panel, [] {
+            QDesktopServices::openUrl(QUrl("https://playhorizon.dev/mods"));
+        });
+        connect(install, &QPushButton::clicked, panel, [project, status, run] {
+            auto slug = project->text().trimmed();
+            const QUrl url(slug);
+            if (url.scheme() == "https" && url.host() == "playhorizon.dev" && url.path().startsWith("/mods/"))
+                slug = url.path().mid(6).section('/', 0, 0);
+            if (slug.isEmpty() || slug.startsWith('-') || slug.contains(QRegularExpression("[^a-zA-Z0-9_-]"))) {
+                status->setText(QObject::tr("Enter a Horizon project link or slug."));
+                return;
+            }
+            run({"mods", "install", "--source", "horizon", "--instance", "horizon", slug});
+        });
+        connect(project, &QLineEdit::returnPressed, install, &QPushButton::click);
+        connect(import, &QPushButton::clicked, panel, [panel, run] {
+            auto* picker = new QFileDialog(panel, QObject::tr("Import Horizon Pack"));
+            picker->setAttribute(Qt::WA_DeleteOnClose);
+            picker->setFileMode(QFileDialog::ExistingFile);
+            picker->setNameFilter(QObject::tr("Horizon packs (*.zip *.hshader)"));
+            QObject::connect(picker, &QFileDialog::fileSelected, panel, [run](const QString& path) {
+                run({"packs", "add", "--instance", "horizon", path});
+            });
+            picker->open();
+        });
         connect(setup, &QPushButton::clicked, panel, [] { APPLICATION->openHorizonSetup(); });
         connect(folder, &QPushButton::clicked, panel, [path = instance->gameRoot()] {
             if (QDir().mkpath(path))
@@ -2108,7 +2186,7 @@ void StellarGallery::showCreator()
     };
     field(tr("Minecraft"), version);
     field(tr("Loader"), loader);
-    auto* horizonHint = new QLabel(tr("Horizon runs Minecraft 26.3 with its own launcher and sign-in."), panel);
+    auto* horizonHint = new QLabel(tr("Play Minecraft 26.3 with the Rust engine. First-time setup is in Stellar."), panel);
     horizonHint->setWordWrap(true);
     horizonHint->hide();
     layout->addWidget(horizonHint);
