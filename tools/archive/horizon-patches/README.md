@@ -7,4 +7,6 @@ These patches target Horizon revision `0a875da91dbb0fdcb7ba8c42c11341aa229af51a`
 
 From the pinned Horizon source tree, run `git apply --check /path/to/stellar-title-motion.patch /path/to/spear-movement.patch`. Once both patches apply, apply them without `--check` and build the client using Horizon's build instructions. Enable the accompanying Stellar Rust Panorama resource pack to use the motion effect.
 
-Both patches were checked against the pinned source. The title shader also passed Naga parsing and validation. The modified engine has yet to be verified in the title screen or on a multiplayer server.
+Both patches passed `cargo check --locked -p horizon-client --lib` against the pinned source. The title shader also passed Naga parsing and validation. The modified engine has yet to be verified in the title screen or on a multiplayer server.
+
+The [Stellar Rust engine preview workflow](../../../.github/workflows/stellar-rust-engine.yml) builds a standalone Apple silicon test client from this revision.
