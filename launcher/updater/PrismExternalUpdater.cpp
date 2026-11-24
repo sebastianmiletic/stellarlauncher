@@ -34,6 +34,7 @@
 
 #include "StringUtils.h"
 
+#include "Application.h"
 #include "BuildConfig.h"
 
 #include "ui/dialogs/UpdateAvailableDialog.h"
@@ -73,9 +74,8 @@ PrismExternalUpdater::PrismExternalUpdater(QWidget* parent, const QString& appDi
     priv->parent = parent;
     connectTimer();
     resetAutoCheckTimer();
-    if (priv->updateInterval == 0) {  // "On Launch"
-        checkForUpdates(false);
-    }
+    if (priv->autoCheck)
+        QTimer::singleShot(1500, this, [this] { checkForUpdates(false); });
 }
 
 PrismExternalUpdater::~PrismExternalUpdater()
@@ -334,9 +334,8 @@ void PrismExternalUpdater::offerUpdate(const QString& versionName,
     if (result == UpdateAvailableDialog::Skip) {
         priv->settings->setValue(versionTag, true);
     } else {
-        if (result == UpdateAvailableDialog::Install) {
+        if (result == UpdateAvailableDialog::Install && APPLICATION->updatesAreAllowed())
             performUpdate(versionTag);
-        }
         priv->settings->remove(versionTag);
     }
     priv->settings->endGroup();
@@ -367,6 +366,7 @@ void PrismExternalUpdater::performUpdate(const QString& versionTag) const
     auto result = proc.startDetached();
     if (!result) {
         qDebug() << "Failed to start updater:" << proc.error() << proc.errorString();
+        return;
     }
     QCoreApplication::exit();
 }

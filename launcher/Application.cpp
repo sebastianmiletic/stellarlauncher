@@ -117,6 +117,8 @@
 #include <QTranslator>
 #include <QVBoxLayout>
 #include <QWindow>
+#include <QScreen>
+#include <QSaveFile>
 #include <utility>
 
 #include "InstanceList.h"
@@ -1681,6 +1683,29 @@ bool Application::openJsonEditor(const QString& filename)
     return DesktopServices::run(m_settings->get("JsonEditor").toString(), { file });
 }
 
+static bool prepareFitWindow(const QString& gameDirectory)
+{
+    QFile options(QDir(gameDirectory).filePath("options.txt"));
+    if (!options.exists())
+        return true;
+    if (!options.open(QIODevice::ReadOnly))
+        return false;
+    const auto saved = options.readAll();
+    if (options.error() != QFileDevice::NoError)
+        return false;
+    options.close();
+    auto lines = saved.split('\n');
+    for (auto& line : lines) {
+        if (line.trimmed() == "fullscreen:true")
+            line.replace("true", "false");
+    }
+    const auto windowed = lines.join('\n');
+    if (windowed == saved)
+        return true;
+    QSaveFile output(options.fileName());
+    return output.open(QIODevice::WriteOnly) && output.write(windowed) == windowed.size() && output.commit();
+}
+
 bool Application::launch(MinecraftInstance* instance,
                          LaunchMode mode,
                          MinecraftTarget::Ptr targetToJoin,
@@ -1689,9 +1714,15 @@ bool Application::launch(MinecraftInstance* instance,
 {
     if (m_updateRunning) {
         qDebug() << "Cannot launch instances while an update is running. Please try again when updates are completed.";
-    } else if (instance->isHorizon()) {
-        return launchHorizon(instance);
-    } else if (instance->canLaunch()) {
+    } else if (instance->canLaunch() || (instance->isHorizon() && !instance->isRunning())) {
+        const bool fit = m_settings->get("StellarFillScreen").toBool();
+        if (fit && !prepareFitWindow(instance->gameRoot())) {
+            QMessageBox::warning(m_mainWindow, tr("Game Window"), tr("Stellar couldn’t save the windowed launch setting."));
+            return false;
+        }
+        instance->setProperty("stellarGalleryFullscreen", fit);
+        if (instance->isHorizon())
+            return launchHorizon(instance);
         if (instance->window() != nullptr) {
             if (!instance->window()->saveAll()) {
                 return false;
@@ -1829,6 +1860,36 @@ void Application::openHorizonSetup()
 void setStellarHorizonGameBranding(const QString& version);
 #endif
 
+static bool stageRustDefaults(const QDir& game)
+{
+    if (game.exists("options.txt"))
+        return true;
+    if (!game.mkpath("resourcepacks") || !game.mkpath("shaderpacks"))
+        return false;
+    const QList<QPair<QString, QString>> resources{
+        {":/stellar-gallery/rust-look.zip", "resourcepacks/Stellar Look.zip"},
+        {":/stellar-gallery/rust-panorama.zip", "resourcepacks/Stellar Rust Panorama.zip"},
+        {":/stellar-gallery/rust-daybreak.hshader", "shaderpacks/stellar-daybreak-sky.hshader"},
+    };
+    for (const auto& [sourcePath, target] : resources) {
+        if (game.exists(target))
+            continue;
+        QFile source(sourcePath);
+        if (!source.open(QIODevice::ReadOnly) || !FS::write(game.filePath(target), source.readAll()))
+            return false;
+    }
+    if (!game.exists("horizon-extras.txt") &&
+        !FS::write(game.filePath("horizon-extras.txt"), "fullbright:true\n"))
+        return false;
+    if (!game.exists("horizon-graphics.txt") &&
+        !FS::write(game.filePath("horizon-graphics.txt"), "pickedShaderPack:horizon:stellar_daybreak_sky\nresolutionScale:65\n"))
+        return false;
+    return bool(FS::write(game.filePath("options.txt"),
+                          "enableVsync:false\nmaxFps:260\nsprintWindow:10\nsimulationDistance:5\n"
+                          "panoramaScrollSpeed:0.0\nhideSplashTexts:true\nfullscreen:false\n"
+                          "resourcePacks:[\"vanilla\",\"file/Stellar Look.zip\",\"file/Stellar Rust Panorama.zip\"]\n"));
+}
+
 bool Application::launchHorizon(MinecraftInstance* instance)
 {
     if (instance->isRunning())
@@ -1838,8 +1899,8 @@ bool Application::launchHorizon(MinecraftInstance* instance)
         openHorizonSetup();
         return false;
     }
-    if (!QDir().mkpath(instance->gameRoot())) {
-        QMessageBox::warning(m_mainWindow, tr("Couldn’t Start Horizon"), tr("Stellar couldn’t create the game folder."));
+    if (!QDir().mkpath(instance->gameRoot()) || !stageRustDefaults(QDir(instance->gameRoot()))) {
+        QMessageBox::warning(m_mainWindow, tr("Couldn’t Start Rust Minecraft"), tr("Stellar couldn’t prepare the game folder."));
         return false;
     }
 
@@ -1848,6 +1909,11 @@ bool Application::launchHorizon(MinecraftInstance* instance)
     auto environment = QProcessEnvironment::systemEnvironment();
     environment.insert("HORIZON_HOME", QDir(instance->gameRoot()).absolutePath());
     environment.insert("HORIZON_LAUNCHER_NO_SELF_UPDATE", "1");
+    const bool fit = instance->property("stellarGalleryFullscreen").toBool();
+    if (fit)
+        environment.insert("STELLAR_RUST_FIT_WINDOW", "1");
+    else
+        environment.remove("STELLAR_RUST_FIT_WINDOW");
 #ifdef Q_OS_MACOS
     // The observer runs only in the Rust client, and requires no accessibility permission.
     const QFileInfo windowObserver(QDir(applicationDirPath()).filePath("../Frameworks/StellarRustWindow.dylib"));
@@ -1906,6 +1972,14 @@ bool Application::launchHorizon(MinecraftInstance* instance)
 #endif
     if (!version.isEmpty())
         arguments << "--version" << version;
+    if (fit) {
+        const auto* screen = m_mainWindow ? m_mainWindow->screen() : primaryScreen();
+        if (screen) {
+            const auto available = screen->availableSize();
+            arguments << "--arg=--width" << QString("--arg=%1").arg(qMax(1, available.width() - 16))
+                      << "--arg=--height" << QString("--arg=%1").arg(qMax(1, available.height() - 48));
+        }
+    }
     process->start(program, arguments);
     return true;
 }

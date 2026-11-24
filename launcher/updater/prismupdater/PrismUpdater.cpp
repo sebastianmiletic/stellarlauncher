@@ -32,6 +32,9 @@
 #include <QCommandLineParser>
 #include <QDirListing>
 #include <QFileInfo>
+#include <QCryptographicHash>
+#include <QRegularExpression>
+#include <QSaveFile>
 #include <QMessageBox>
 #include <QNetworkProxy>
 #include <QNetworkReply>
@@ -54,6 +57,12 @@
 #include "MMCZip.h"
 
 namespace {
+
+QString stellarReleaseVersion(const QString& tag)
+{
+    static const QRegularExpression pattern(R"(^stellar-v([0-9]+\.[0-9]+\.[0-9]+)$)");
+    return pattern.match(tag).captured(1);
+}
 
 /** output to the log file */
 void appDebugOutput(QtMsgType type, const QMessageLogContext& context, const QString& msg)
@@ -288,7 +297,7 @@ PrismUpdaterApp::PrismUpdaterApp(int& argc, char** argv) : QApplication(argc, ar
     showFatalErrorMessage(tr("MacOS Not Supported"), tr("The updater does not support installations on MacOS"));
 #endif
 
-    if (binPath.startsWith("/tmp/.mount_")) {
+    if (!qEnvironmentVariableIsEmpty("APPIMAGE")) {
         m_isAppimage = true;
         m_appimagePath = QProcessEnvironment::systemEnvironment().value(QStringLiteral("APPIMAGE"));
         if (m_appimagePath.isEmpty()) {
@@ -322,7 +331,7 @@ PrismUpdaterApp::PrismUpdaterApp(int& argc, char** argv) : QApplication(argc, ar
     m_printOnly = parser.isSet("list");
     auto userVersion = parser.value("install-version");
     if (!userVersion.isEmpty()) {
-        m_userSelectedVersion = Version(userVersion);
+        m_userSelectedVersion = Version(stellarReleaseVersion(userVersion));
     }
     m_selectUI = parser.isSet("select-ui");
     m_allowDowngrade = parser.isSet("allow-downgrade");
@@ -459,9 +468,7 @@ void PrismUpdaterApp::run()
                                                                         "supported when running the flatpak version of Prism Launcher."));
         return;
     }
-    if (m_isAppimage) {
-        bool result = true;
-        if (needUpdateVal) {
+    if (needUpdateVal) {
             result = callAppImageUpdate();
         }
         exit(result ? 0 : 1);
@@ -671,66 +678,19 @@ GitHubRelease PrismUpdaterApp::selectRelease()
 
 QList<GitHubReleaseAsset> PrismUpdaterApp::validReleaseArtifacts(const GitHubRelease& release) const
 {
-    QList<GitHubReleaseAsset> valid;
-
-    qDebug() << "Selecting best asset from" << release.tag_name << "for platform" << BuildConfig.BUILD_ARTIFACT
-             << "portable:" << m_isPortable;
-    if (BuildConfig.BUILD_ARTIFACT.isEmpty()) {
-        qWarning() << "Build platform is not set!";
-    }
+    const auto version = stellarReleaseVersion(release.tag_name);
+    if (version.isEmpty())
+        return {};
+    const auto prefix = QStringLiteral("StellarLauncher-%1-%2").arg(version, BuildConfig.BUILD_ARTIFACT);
+    const auto expected = prefix + (m_isAppimage ? ".AppImage" : ".zip");
+    const auto url = QStringLiteral("https://github.com/sebastianmiletic/stellarlauncher/releases/download/%1/%2")
+                         .arg(release.tag_name, expected);
+    static const QRegularExpression digestPattern(R"(^sha256:[0-9a-f]{64}$)");
     for (const auto& asset : release.assets) {
-        if (asset.name.endsWith(".zsync")) {
-            qDebug() << "Rejecting zsync file" << asset.name;
-            continue;
-        }
-        if (!m_isAppimage && asset.name.toLower().endsWith("appimage")) {
-            qDebug() << "Rejecting" << asset.name << "because it is an AppImage";
-            continue;
-        }
-        if (m_isAppimage && !asset.name.toLower().endsWith("appimage")) {
-            qDebug() << "Rejecting" << asset.name << "because it is not an AppImage";
-            continue;
-        }
-        auto assetName = asset.name.toLower();
-        auto [platform, platformQtVer] = StringUtils::splitFirst(BuildConfig.BUILD_ARTIFACT.toLower(), "-qt");
-        auto systemIsArm = QSysInfo::buildCpuArchitecture().contains("arm64");
-        auto assetIsArm = assetName.contains("arm64");
-        auto assetIsArchive = assetName.endsWith(".zip") || assetName.endsWith(".tar.gz");
-
-        bool forPlatform = !platform.isEmpty() && assetName.contains(platform);
-        if (!forPlatform) {
-            qDebug() << "Rejecting" << asset.name << "because platforms do not match";
-        }
-        bool forPortable = assetName.contains("portable");
-        if (forPlatform && assetName.contains("legacy") && !platform.contains("legacy")) {
-            qDebug() << "Rejecting" << asset.name << "because platforms do not match";
-            forPlatform = false;
-        }
-        if (forPlatform && ((assetIsArm && !systemIsArm) || (!assetIsArm && systemIsArm))) {
-            qDebug() << "Rejecting" << asset.name << "because architecture does not match";
-            forPlatform = false;
-        }
-        if (forPlatform && platform.contains("windows") && !m_isPortable && assetIsArchive) {
-            qDebug() << "Rejecting" << asset.name << "because it is not an installer";
-            forPlatform = false;
-        }
-
-        static const QRegularExpression s_qtPattern("-qt(\\d+)");
-        auto qtMatch = s_qtPattern.match(assetName);
-        if (forPlatform && qtMatch.hasMatch()) {
-            if (platformQtVer.isEmpty() || platformQtVer.toInt() != qtMatch.captured(1).toInt()) {
-                qDebug() << "Rejecting" << asset.name << "because it is not for the correct qt version" << platformQtVer.toInt() << "vs"
-                         << qtMatch.captured(1).toInt();
-                forPlatform = false;
-            }
-        }
-
-        if (((m_isPortable && forPortable) || (!m_isPortable && !forPortable)) && forPlatform) {
-            qDebug() << "Accepting" << asset.name;
-            valid.append(asset);
-        }
+        if (asset.name == expected && asset.browser_download_url == url && digestPattern.match(asset.digest).hasMatch())
+            return {asset};
     }
-    return valid;
+    return {};
 }
 
 GitHubReleaseAsset PrismUpdaterApp::selectAsset(const QList<GitHubReleaseAsset>& assets)
@@ -780,41 +740,62 @@ void PrismUpdaterApp::performUpdate(const GitHubRelease& release)
         return;
     }
 
+    if (m_isAppimage) {
+        if (replaceAppImage(file))
+            exit(0);
+        else
+            showFatalErrorMessage(tr("Couldn’t Update"), tr("Stellar couldn’t replace or restart this AppImage."));
+        return;
+    }
     performInstall(file);
 }
 
 QFileInfo PrismUpdaterApp::downloadAsset(const GitHubReleaseAsset& asset)
 {
-    auto tempDir = QDir::tempPath();
-    auto fileUrl = QUrl(asset.browser_download_url);
-    auto outFilePath = FS::PathCombine(tempDir, fileUrl.fileName());
-
-    qDebug() << "downloading" << fileUrl << "to" << outFilePath;
-    auto download = Net::Request::makeFile(fileUrl, outFilePath);
+    if (!m_downloadDirectory.isValid())
+        return {};
+    const auto path = m_downloadDirectory.filePath(asset.name);
+    auto download = Net::Request::makeFile(QUrl(asset.browser_download_url), path);
     download->setNetwork(m_network.get());
-    auto progressDialog = ProgressDialog();
-    progressDialog.adjustSize();
-
-    progressDialog.execWithTask(download.get());
-
-    qDebug() << "download complete";
-
-    QFileInfo outFile(outFilePath);
-    return outFile;
+    ProgressDialog progressDialog;
+    if (progressDialog.execWithTask(download.get()) != QDialog::Accepted)
+        return {};
+    QFile file(path);
+    QCryptographicHash sha(QCryptographicHash::Sha256);
+    if (!file.open(QIODevice::ReadOnly) || !sha.addData(&file) ||
+        asset.digest != ("sha256:" + QString::fromLatin1(sha.result().toHex()))) {
+        qWarning() << "The downloaded package did not match its GitHub digest";
+        return {};
+    }
+    return QFileInfo(file);
 }
 
-bool PrismUpdaterApp::callAppImageUpdate()
+bool PrismUpdaterApp::replaceAppImage(const QFileInfo& file)
 {
-    auto appimagePath = QProcessEnvironment::systemEnvironment().value(QStringLiteral("APPIMAGE"));
-    QProcess proc = QProcess();
-    qDebug() << "Calling: AppImageUpdate" << appimagePath;
-    proc.setProgram(FS::PathCombine(m_rootPath, "bin", "AppImageUpdate.AppImage"));
-    proc.setArguments({ appimagePath });
-    auto result = proc.startDetached();
-    if (!result) {
-        qDebug() << "Failed to start AppImageUpdate reason:" << proc.errorString();
+    const QFileInfo current(m_appimagePath);
+    if (!current.isAbsolute() || !current.isFile() || current.isSymLink() || !current.isExecutable())
+        return false;
+    QFile input(file.absoluteFilePath());
+    QSaveFile output(current.absoluteFilePath());
+    if (!input.open(QIODevice::ReadOnly) || !output.open(QIODevice::WriteOnly))
+        return false;
+    if (!output.setPermissions(current.permissions()))
+        return false;
+    while (!input.atEnd()) {
+        const auto chunk = input.read(1024 * 1024);
+        if (chunk.isEmpty() || output.write(chunk) != chunk.size())
+            return false;
     }
-    return result;
+    if (!output.commit())
+        return false;
+    auto environment = QProcessEnvironment::systemEnvironment();
+    for (const auto& name : {"APPIMAGE", "APPDIR", "LD_LIBRARY_PATH", "QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH"})
+        environment.remove(name);
+    QProcess restart;
+    restart.setProgram(current.absoluteFilePath());
+    restart.setArguments({"--dir", m_dataPath});
+    restart.setProcessEnvironment(environment);
+    return restart.startDetached();
 }
 
 void PrismUpdaterApp::clearUpdateLog()
@@ -1260,7 +1241,10 @@ Result<int> PrismUpdaterApp::parseReleasePage(const QByteArray* response)
         TRY_INTO(release.draft, Json::requireBoolean(obj, "draft"))
         TRY_INTO(release.prerelease, Json::requireBoolean(obj, "prerelease"))
         release.body = obj["body"].toString();
-        release.version = Version(release.tag_name);
+        const auto version = stellarReleaseVersion(release.tag_name);
+        if (version.isEmpty())
+            continue;
+        release.version = Version(version);
 
         TRY_INTO(const auto& releaseAssetsObj, Json::requireArray(obj, "assets"))
         for (auto assetJson : releaseAssetsObj) {
@@ -1274,6 +1258,7 @@ Result<int> PrismUpdaterApp::parseReleasePage(const QByteArray* response)
             TRY_INTO(asset.created_at, Json::requireString(assetObj, "created_at").and_then(toDate))
             TRY_INTO(asset.updated_at, Json::requireString(assetObj, "updated_at").and_then(toDate))
             TRY_INTO(asset.browser_download_url, Json::requireString(assetObj, "browser_download_url"))
+            asset.digest = assetObj["digest"].toString();
             release.assets.append(asset);
         }
         m_releases.append(release);
@@ -1292,6 +1277,8 @@ GitHubRelease PrismUpdaterApp::getLatestRelease()
         if (release.prerelease && !m_allowPreRelease) {
             continue;
         }
+        if (validReleaseArtifacts(release).isEmpty())
+            continue;
         if (!latest.isValid() || (release.version > latest.version)) {
             latest = release;
         }

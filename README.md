@@ -2,7 +2,11 @@
 
 <img src="tools/stellar-prism/screenshots/stellar-logo.png" width="96" alt="Stellar Launcher logo">
 
-[Download for macOS, Windows, or Linux](https://github.com/sebastianmiletic/stellarlauncher/releases/latest)
+<a href="https://github.com/sebastianmiletic/stellarlauncher/releases/latest"><img src="tools/stellar-prism/platforms/apple.svg" width="20" height="20" alt=""> Download for macOS</a>
+&nbsp; · &nbsp;
+<a href="https://github.com/sebastianmiletic/stellarlauncher/releases/latest"><img src="tools/stellar-prism/platforms/windows.svg" width="20" height="20" alt=""> Download for Windows</a>
+&nbsp; · &nbsp;
+<a href="https://github.com/sebastianmiletic/stellarlauncher/releases/latest"><img src="tools/stellar-prism/platforms/linux.svg" width="20" height="20" alt=""> Download for Linux</a>
 
 ![Stellar's wallpaper gallery with three sample Minecraft instances](tools/stellar-prism/screenshots/gallery.png)
 
@@ -26,9 +30,9 @@ Stellar Launcher is a compact Minecraft Java launcher built on Prism Launcher’
 
 ## Rust Minecraft
 
-Choose **Horizon · Rust** when creating an instance. The packaged app includes the Horizon command-line tools and starts the game directly from Stellar. A separate Horizon Launcher installation is unnecessary.
+Choose **Rust** when creating an instance. Stellar includes the required setup tools and starts the game directly.
 
-On first use, open **Edit → Rust Setup** from the instance. Download the engine, sign in with a Microsoft account that owns Minecraft Java Edition, then choose **Download Game Assets**. After that, use **Play**. The game engine and assets are downloaded on demand, and Rust instances keep their existing worlds, settings, and content.
+On first use, open **Edit → Rust Setup** from the instance. Download the engine, sign in with a Microsoft account that owns Minecraft Java Edition, then choose **Download Game Assets**. After that, use **Play**. The game engine and assets are downloaded on demand. New profiles enable the Stellar title, Daybreak Sky, Fullbright, double-tap sprint, 65% render scale, and uncapped rendering with VSync off. Existing profiles retain their own game settings.
 
 Rust engine availability depends on Horizon's published game builds. Current upstream releases provide a native game for macOS on Apple silicon, Windows x86-64, and Linux x86-64. The Windows ARM64, macOS Intel, and Linux ARM64 Stellar packages support Java. The bundled Horizon helper includes its license and exact source reference. [Upstream game releases](https://github.com/horizon-rust/horizon/releases) · [Horizon helper source](https://github.com/horizon-rust/horizon/tree/65686f40f394cbd80771b18cd92d911543c9c967)
 

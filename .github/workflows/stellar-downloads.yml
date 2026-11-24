@@ -9,7 +9,7 @@ on:
         default: All
         options: [All, macOS, Windows, Linux]
       publish:
-        description: Publish a GitHub Release after all platforms pass
+        description: Stage a release draft for signing after all platforms pass
         type: boolean
         default: false
 
@@ -106,6 +106,10 @@ jobs:
                 "-DVCPKG_TARGET_TRIPLET=$STELLAR_TRIPLET" "-DVCPKG_HOST_TRIPLET=$STELLAR_TRIPLET")
               ;;
           esac
+          if [[ "$RUNNER_OS" != macOS ]]; then
+            options+=("-DLauncher_UPDATER_GITHUB_REPO=https://github.com/sebastianmiletic/stellarlauncher"
+                      "-DLauncher_BUILD_ARTIFACT=$STELLAR_PLATFORM-$STELLAR_ARCH")
+          fi
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/stage" \
             -DLauncher_BUILD_PLATFORM=stellar-github -DLauncher_ENABLE_JAVA_DOWNLOADER=ON \
             -DLauncher_USE_PCH=ON -DBUILD_TESTING=ON -DENABLE_LTO=OFF \
@@ -163,5 +167,5 @@ jobs:
             test -s "downloads/StellarLauncher-$version-Linux-$arch.AppImage"
             test -s "downloads/StellarLauncher-$version-Linux-$arch.AppImage.sha256"
           done
-          gh release create "stellar-v$version" downloads/* program_info/stellar-daybreak-sky.hshader \
-            --target "$GITHUB_SHA" --title "Stellar Launcher $version" --generate-notes
+          gh release create "stellar-v$version" downloads/* program_info/stellar-daybreak-sky.hshader program_info/stellar-rust-panorama.zip \
+            --target "$GITHUB_SHA" --title "Stellar Launcher $version" --draft --generate-notes

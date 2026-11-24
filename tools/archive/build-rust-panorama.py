@@ -29,6 +29,9 @@ def build(wallpaper, destination):
         output.writestr(ZipInfo("pack.mcmeta"), json.dumps(meta), ZIP_DEFLATED)
         output.writestr(ZipInfo("assets/stellar/title/panorama_motion.txt"),
                         "stellar-1", ZIP_DEFLATED)
+        strings = {"horizon.title.not_affiliated": ""}
+        output.writestr(ZipInfo("assets/stellar/lang/en_us.json"),
+                        json.dumps(strings), ZIP_DEFLATED)
         for index, (dx, dy, dz) in enumerate(directions):
             camera_y = dy * np.cos(pitch) - dz * np.sin(pitch)
             depth = -(dy * np.sin(pitch) + dz * np.cos(pitch))

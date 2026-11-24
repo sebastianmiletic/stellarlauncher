@@ -186,7 +186,7 @@ set(Launcher_LEGACY_FMLLIBS_BASE_URL "https://files.prismlauncher.org/fmllibs/" 
 ######## Set version numbers ########
 set(Launcher_VERSION_MAJOR 1)
 set(Launcher_VERSION_MINOR 5)
-set(Launcher_VERSION_PATCH 11)
+set(Launcher_VERSION_PATCH 12)
 
 set(Launcher_VERSION_NAME "${Launcher_VERSION_MAJOR}.${Launcher_VERSION_MINOR}.${Launcher_VERSION_PATCH}")
 set(Launcher_VERSION_NAME4 "${Launcher_VERSION_MAJOR}.${Launcher_VERSION_MINOR}.${Launcher_VERSION_PATCH}.0")
@@ -417,8 +417,13 @@ if(UNIX AND APPLE)
     set(MACOSX_BUNDLE_LONG_VERSION_STRING "${Launcher_VERSION_NAME}")
     set(MACOSX_BUNDLE_ICON_FILE ${Launcher_Name}.icns)
     set(MACOSX_BUNDLE_COPYRIGHT "${Launcher_Copyright_Mac}")
-    set(MACOSX_SPARKLE_UPDATE_PUBLIC_KEY "" CACHE STRING "Public key for Sparkle update feed")
-    set(MACOSX_SPARKLE_UPDATE_FEED_URL "" CACHE STRING "URL for Sparkle update feed")
+    set(stellar_appcast appcast.xml)
+    if(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64" OR
+       (NOT CMAKE_OSX_ARCHITECTURES AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64"))
+        set(stellar_appcast appcast-intel.xml)
+    endif()
+    set(MACOSX_SPARKLE_UPDATE_PUBLIC_KEY "PqH556NKaC1/iq5om4zBz/2NQ0/WsiMfVi+1wHgdbTo=" CACHE STRING "Public key for Sparkle update feed")
+    set(MACOSX_SPARKLE_UPDATE_FEED_URL "https://github.com/sebastianmiletic/stellarlauncher/releases/latest/download/${stellar_appcast}" CACHE STRING "URL for Sparkle update feed")
 
     set(MACOSX_SPARKLE_DOWNLOAD_URL "https://github.com/sparkle-project/Sparkle/releases/download/2.9.6/Sparkle-2.9.6.tar.xz" CACHE STRING "URL to Sparkle release archive")
     set(MACOSX_SPARKLE_SHA256 "52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192" CACHE STRING "SHA256 checksum for Sparkle release archive")

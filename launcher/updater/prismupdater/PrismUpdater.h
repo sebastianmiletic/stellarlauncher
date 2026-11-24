@@ -43,6 +43,8 @@
 #define PRISM_EXTERNAL_EXE
 #include "FileSystem.h"
 
+#include <QTemporaryDir>
+
 #include "GitHubRelease.h"
 
 class PrismUpdaterApp : public QApplication {
@@ -83,7 +85,7 @@ class PrismUpdaterApp : public QApplication {
     std::optional<QDir> unpackArchive(const QFileInfo& archive);
 
     QFileInfo downloadAsset(const GitHubReleaseAsset& asset);
-    bool callAppImageUpdate();
+    bool replaceAppImage(const QFileInfo& file);
 
     void moveAndFinishUpdate(const QDir& target);
 
@@ -124,6 +126,7 @@ class PrismUpdaterApp : public QApplication {
     QString m_prsimVersionChannel;
     QString m_prismGitCommit;
 
+    QTemporaryDir m_downloadDirectory;
     GitHubRelease m_installRelease;
 
     Status m_status = Status::Starting;

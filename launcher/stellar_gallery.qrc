@@ -4,5 +4,8 @@
         <file alias="fallback.jpg">../program_info/stellar-wallpaper.jpg</file>
         <file alias="mark.svg">../tools/stellar-prism/stellar-mark.svg</file>
         <file alias="chevron.svg">ui/themes/stellar-chevron.svg</file>
+        <file alias="rust-look.zip">../program_info/archive-look.zip</file>
+        <file alias="rust-panorama.zip">../program_info/stellar-rust-panorama.zip</file>
+        <file alias="rust-daybreak.hshader">../program_info/stellar-daybreak-sky.hshader</file>
     </qresource>
 </RCC>

@@ -35,7 +35,7 @@ case "$STELLAR_PLATFORM" in
         gh release download continuous --repo DioEgizio/go-appimage --pattern "mkappimage-*-$STELLAR_ARCH.AppImage" \
             --output "$tooling/mkappimage"
         chmod +x "$tooling/sharun" "$tooling/mkappimage"
-        "$tooling/sharun" lib4bin --hard-links --with-hooks --dst-dir "$stage" "$executable" \
+        "$tooling/sharun" lib4bin --hard-links --with-hooks --dst-dir "$stage" "$executable" "$stage/bin/archivelauncher_updater" \
             "$QT_PLUGIN_PATH/"*/*.so
         mv "$stage/sharun" "$stage/AppRun"
         printf '%s\n' 'ARCHIVELAUNCHER_DISABLE_GLVULKAN=1' > "$stage/.env"

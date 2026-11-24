@@ -1141,7 +1141,7 @@ void StellarGallery::rebuild()
         const auto path = instance ? artworkPath(id, version) : QString();
         auto* tile = existing.take(id);
         if (instance && instance->isHorizon())
-            version = tr("Horizon · %1").arg(version);
+            version = tr("Rust · %1").arg(version);
         else if (instance && version.isEmpty())
             version = tr("Minecraft");
         const bool fresh = !tile;
@@ -1459,9 +1459,9 @@ void StellarGallery::showStop(const QString& id)
     if (!instance || !instance->isRunning())
         return;
     if (instance->isHorizon()) {
-        auto* panel = makePanel(tr("Horizon is running"));
+        auto* panel = makePanel(tr("Rust Minecraft is running"));
         panel->setFixedWidth(300);
-        auto* hint = new QLabel(tr("Quit from Horizon to save and stop this instance."), panel);
+        auto* hint = new QLabel(tr("Quit Minecraft to save and stop this instance."), panel);
         hint->setWordWrap(true);
         panel->layout()->addWidget(hint);
         placePanel();
@@ -1804,24 +1804,71 @@ void StellarGallery::editInstance(const QString& id)
     if (!instance)
         return;
     if (instance->isHorizon()) {
-        auto* panel = makePanel(tr("Horizon Instance"));
-        panel->setFixedWidth(400);
+        dismissPanel();
+        QVBoxLayout* shell;
+        auto* panel = galleryDialog(instance->name(), shell);
+        auto* body = new QHBoxLayout;
+        auto* controls = new QVBoxLayout;
+        auto* library = new QVBoxLayout;
+        auto* category = new QComboBox(panel);
+        category->setAccessibleName(tr("Content type"));
+        category->addItem(tr("Mods"));
+        category->addItem(tr("Resource packs"));
+        category->addItem(tr("Shader packs"));
+        library->addWidget(category);
+        auto* files = new QListWidget(panel);
+        files->setAccessibleName(tr("Installed content"));
+        files->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        library->addWidget(files, 1);
+        const auto root = QDir(instance->gameRoot());
+        const auto refresh = [category, files, root] {
+            files->clear();
+            const auto addFiles = [files, root](const QString& directory, const QStringList& filters) {
+                const QDir source(root.filePath(directory));
+                for (const auto& file : source.entryInfoList(filters, QDir::Files | QDir::NoSymLinks, QDir::Name)) {
+                    auto* item = new QListWidgetItem(file.completeBaseName(), files);
+                    item->setToolTip(file.fileName());
+                    item->setData(Qt::UserRole, file.absoluteFilePath());
+                }
+            };
+            switch (category->currentIndex()) {
+                case 0:
+                    addFiles("horizon-mods", {"*.hmod", "*.wasm"});
+                    addFiles("horizon-native-mods", {"*.hmod"});
+                    break;
+                case 1:
+                    addFiles("resourcepacks", {"*.zip"});
+                    break;
+                case 2:
+                    addFiles("shaderpacks", {"*.zip", "*.hshader"});
+                    break;
+            }
+        };
+        connect(category, &QComboBox::currentIndexChanged, panel, refresh);
+        refresh();
         auto* project = new QLineEdit(panel);
-        project->setPlaceholderText(tr("Horizon project link or slug"));
-        project->setAccessibleName(tr("Horizon project"));
+        project->setPlaceholderText(tr("Project link or slug"));
+        project->setAccessibleName(tr("Mod project"));
         auto* status = new QLabel(panel);
         status->setWordWrap(true);
         status->setTextFormat(Qt::PlainText);
-        auto* browse = new GalleryButton(tr("Browse Horizon Content"), panel);
+        auto* browse = new GalleryButton(tr("Browse Mods & Packs"), panel);
         auto* install = new GalleryButton(tr("Install Project"), panel);
         auto* import = new GalleryButton(tr("Import Resource or Shader Pack"), panel);
         auto* setup = new GalleryButton(tr("Rust Setup"), panel);
         auto* folder = new GalleryButton(tr("Game Folder"), panel);
         auto* wallpaper = new GalleryButton(tr("Wallpaper"), panel);
-        panel->layout()->addWidget(project);
-        for (auto* button : {browse, install, import, setup, folder, wallpaper})
-            panel->layout()->addWidget(button);
-        panel->layout()->addWidget(status);
+        auto* search = new QHBoxLayout;
+        search->addWidget(project, 1);
+        search->addWidget(install);
+        controls->addLayout(search);
+        for (auto* button : {browse, import, setup, folder, wallpaper})
+            controls->addWidget(button);
+        controls->addStretch();
+        body->addLayout(library, 1);
+        body->addLayout(controls, 1);
+        shell->addLayout(body, 1);
+        shell->addWidget(status);
         auto* process = new QProcess(this);
         auto environment = QProcessEnvironment::systemEnvironment();
         environment.insert("HORIZON_HOME", QDir(instance->gameRoot()).absolutePath());
@@ -1833,12 +1880,14 @@ void StellarGallery::editInstance(const QString& id)
             else
                 connect(process, &QProcess::finished, process, &QObject::deleteLater);
         });
-        const auto complete = [process, status, install, import](bool success) {
+        const auto complete = [process, status, install, import, refresh](bool success) {
             const auto detail = QString::fromUtf8(process->readAll()).trimmed().right(240);
-            status->setText(success ? QObject::tr("Added. Packs can be enabled in Horizon’s game options.")
+            status->setText(success ? QObject::tr("Content added.")
                                     : detail.isEmpty() ? process->errorString() : detail);
             install->setEnabled(true);
             import->setEnabled(true);
+            if (success)
+                refresh();
         };
         connect(process, &QProcess::errorOccurred, panel, [complete](QProcess::ProcessError error) {
             if (error == QProcess::FailedToStart)
@@ -1848,8 +1897,10 @@ void StellarGallery::editInstance(const QString& id)
             complete(code == 0 && result == QProcess::NormalExit);
         });
         const auto run = [process, status, install, import, current = QPointer(instance)](const QStringList& arguments) {
+            if (process->state() != QProcess::NotRunning)
+                return;
             if (!current || current->isRunning()) {
-                status->setText(QObject::tr("Quit Horizon before changing its content."));
+                status->setText(QObject::tr("Close Minecraft before changing its content."));
                 return;
             }
             const auto program = APPLICATION->horizonLauncher();
@@ -1871,17 +1922,17 @@ void StellarGallery::editInstance(const QString& id)
             if (url.scheme() == "https" && url.host() == "playhorizon.dev" && url.path().startsWith("/mods/"))
                 slug = url.path().mid(6).section('/', 0, 0);
             if (slug.isEmpty() || slug.startsWith('-') || slug.contains(QRegularExpression("[^a-zA-Z0-9_-]"))) {
-                status->setText(QObject::tr("Enter a Horizon project link or slug."));
+                status->setText(QObject::tr("Enter a Project link or slug."));
                 return;
             }
             run({"mods", "install", "--source", "horizon", "--instance", "horizon", slug});
         });
         connect(project, &QLineEdit::returnPressed, install, &QPushButton::click);
         connect(import, &QPushButton::clicked, panel, [panel, run] {
-            auto* picker = new QFileDialog(panel, QObject::tr("Import Horizon Pack"));
+            auto* picker = new QFileDialog(panel, QObject::tr("Import Pack"));
             picker->setAttribute(Qt::WA_DeleteOnClose);
             picker->setFileMode(QFileDialog::ExistingFile);
-            picker->setNameFilter(QObject::tr("Horizon packs (*.zip *.hshader)"));
+            picker->setNameFilter(QObject::tr("Resource and shader packs (*.zip *.hshader)"));
             QObject::connect(picker, &QFileDialog::fileSelected, panel, [run](const QString& path) {
                 run({"packs", "add", "--instance", "horizon", path});
             });
@@ -1892,8 +1943,31 @@ void StellarGallery::editInstance(const QString& id)
             if (QDir().mkpath(path))
                 QDesktopServices::openUrl(QUrl::fromLocalFile(path));
         });
-        connect(wallpaper, &QPushButton::clicked, panel, [this, id] { showWallpapers(id); });
-        placePanel();
+        connect(wallpaper, &QPushButton::clicked, panel, [this, panel, id] {
+            panel->close();
+            showWallpapers(id);
+        });
+        auto* packActions = new QHBoxLayout;
+        for (const auto& [label, command] : QList<QPair<QString, QString>>{
+                 {tr("Enable"), "on"}, {tr("Disable"), "off"}, {tr("Trash"), "remove"}}) {
+            auto* button = new GalleryButton(label, panel);
+            button->setEnabled(false);
+            connect(files, &QListWidget::currentItemChanged, button, [button, category, process](QListWidgetItem* item) {
+                button->setEnabled(item && category->currentIndex() > 0 && process->state() == QProcess::NotRunning);
+            });
+            connect(button, &QPushButton::clicked, panel, [panel, files, category, command, run, process] {
+                const auto* item = files->currentItem();
+                if (!item || process->state() != QProcess::NotRunning)
+                    return;
+                const auto file = QFileInfo(item->data(Qt::UserRole).toString()).fileName();
+                if (command == "remove" && QMessageBox::question(panel, tr("Move Pack to Trash"), file) != QMessageBox::Yes)
+                    return;
+                run({"packs", command, "--instance", "horizon", "--kind", category->currentIndex() == 1 ? "resource" : "shader", file});
+            });
+            packActions->addWidget(button);
+        }
+        library->addLayout(packActions);
+        panel->show();
         return;
     }
     auto* editor = APPLICATION->showInstanceWindow(instance, "version", window());
@@ -2152,7 +2226,7 @@ void StellarGallery::showCreator()
     layout->addWidget(name);
     auto* engineChoice = new QButtonGroup(panel);
     auto* javaEngine = new GalleryButton(tr("Minecraft Java"), panel);
-    auto* horizonEngine = new GalleryButton(tr("Horizon · Rust"), panel);
+    auto* horizonEngine = new GalleryButton(tr("Rust"), panel);
     javaEngine->setCheckable(true);
     horizonEngine->setCheckable(true);
     engineChoice->addButton(javaEngine);
@@ -2244,7 +2318,7 @@ void StellarGallery::showCreator()
                                         new VanillaCreationTask(game, fabricId, fabric->getRecommended());
         auto title = name->text().trimmed();
         if (title.isEmpty())
-            title = horizon ? tr("Horizon %1").arg(game->descriptor()) : tr("Minecraft %1").arg(game->descriptor());
+            title = horizon ? tr("Minecraft %1 · Rust").arg(game->descriptor()) : tr("Minecraft %1").arg(game->descriptor());
         creation->setHorizon(horizon);
         creation->setPerformanceMods(!horizon && loader->currentIndex() == 1 && compatible->isChecked());
         creation->setName(title);
@@ -2531,9 +2605,19 @@ void StellarGallery::showPreferences()
            {{tr("Subtle progress"), "progress"}, {tr("Wallpaper wave"), "wave"}, {tr("Wallpaper fade"), "fade"},
             {tr("Horizontal wipe"), "wipe"}, {tr("Iris reveal"), "iris"}, {tr("Status only"), "off"}});
     select(behavior, tr("Loader filter"), "StellarLoaderFilter",
-           {{tr("All loaders"), ""}, {tr("Vanilla"), "Vanilla"}, {tr("Horizon"), "Horizon"}, {"Fabric", "Fabric"}, {"Forge", "Forge"},
+           {{tr("All loaders"), ""}, {tr("Vanilla"), "Vanilla"}, {tr("Rust"), "Horizon"}, {"Fabric", "Fabric"}, {"Forge", "Forge"},
             {"NeoForge", "NeoForge"}, {"Quilt", "Quilt"}, {"LiteLoader", "LiteLoader"}}, [this] { rebuild(); });
-    check(behavior, tr("Fullscreen on launch"), "StellarFillScreen");
+    check(behavior, tr("Fit game window to screen"), "StellarFillScreen");
+    auto* updates = new GalleryButton(tr("Check for Updates…"), preferences);
+    updates->setEnabled(APPLICATION->updatesAreAllowed());
+    connect(APPLICATION, &Application::updateAllowedChanged, updates, &QWidget::setEnabled);
+    connect(updates, &QPushButton::clicked, preferences, [] {
+        if (APPLICATION->updater())
+            APPLICATION->triggerUpdateCheck();
+        else
+            QDesktopServices::openUrl(QUrl("https://github.com/sebastianmiletic/stellarlauncher/releases/latest"));
+    });
+    behavior->addWidget(updates);
     check(behavior, tr("Match mods on version change"), "StellarAutoMatchMods");
     auto* account = new GalleryButton(tr("Microsoft App ID…"), preferences);
     behavior->addWidget(account);

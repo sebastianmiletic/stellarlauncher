@@ -802,10 +802,6 @@ QStringList MinecraftInstance::processMinecraftArgs(AuthSessionPtr session, Mine
         }
     }
 
-    if (session && property("stellarGalleryFullscreen").toBool() && !isLegacy() && !args.contains("--fullscreen")) {
-        args << "--fullscreen";
-    }
-
     QMap<QString, QString> tokenMapping = makeProfileVarMapping(profile);
 
     // yggdrasil!
@@ -866,18 +862,18 @@ QString MinecraftInstance::createLaunchScript(AuthSessionPtr session, MinecraftT
     // window size, title and state, legacy
     {
         QString windowParams;
-        if (settings()->get("LaunchMaximized").toBool() || (isLegacy() && property("stellarGalleryFullscreen").toBool())) {
+        if (settings()->get("LaunchMaximized").toBool() || property("stellarGalleryFullscreen").toBool()) {
             // FIXME doesn't support maximisation
             if (!isLegacy()) {
-                auto screen = QGuiApplication::primaryScreen();
-                auto screenGeometry = screen->availableSize();
+                auto* active = QApplication::activeWindow();
+                const auto* screen = active ? active->screen() : QGuiApplication::primaryScreen();
+                auto screenGeometry = screen ? screen->availableSize().shrunkBy(QMargins(8, 24, 8, 24)) : QSize(854, 480);
 
                 // small hack to get the widow decorations
                 for (auto w : QApplication::topLevelWidgets()) {
                     auto mainWindow = qobject_cast<QMainWindow*>(w);
-                    if (mainWindow) {
-                        auto m = mainWindow->windowHandle()->frameMargins();
-                        screenGeometry = screenGeometry.shrunkBy(m);
+                    if (mainWindow && mainWindow->windowHandle() && screen) {
+                        screenGeometry = screen->availableSize().shrunkBy(mainWindow->windowHandle()->frameMargins());
                         break;
                     }
                 }
