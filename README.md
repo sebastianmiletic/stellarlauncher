@@ -42,6 +42,8 @@ Rust engine availability depends on Horizon's published game builds. Current ups
 
 ![Stellar’s Rust title screen with a full-width black hole](tools/stellar-prism/screenshots/rust-title.jpg)
 
+[See the animated Rust title preview](tools/stellar-prism/screenshots/rust-title-motion.webp). It shows the disk and stars moving around a fixed black hole on an Apple silicon preview build.
+
 ### MacBook Air performance
 
 | Test | Average | 1% low |
