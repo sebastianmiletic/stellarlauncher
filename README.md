@@ -42,7 +42,7 @@ Rust engine availability depends on Horizon's published game builds. Current ups
 
 ![Stellar’s Rust title screen with a full-width black hole](tools/stellar-prism/screenshots/rust-title.jpg)
 
-[See the animated Rust title preview](tools/stellar-prism/screenshots/rust-title-motion.webp). It shows the disk and stars moving around a fixed black hole on an Apple silicon preview build.
+[See the animated Rust title preview](tools/stellar-prism/screenshots/rust-title-motion.webp). It shows the disk and stars moving around a fixed black hole. The [Apple silicon engine preview](https://github.com/sebastianmiletic/stellarlauncher/releases/tag/stellar-rust-preview-2026.11.25) includes this effect and the 26.3 spear movement patch.
 
 ### MacBook Air performance
 
