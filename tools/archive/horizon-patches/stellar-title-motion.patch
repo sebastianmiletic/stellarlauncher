@@ -1,0 +1,169 @@
+--- a/crates/horizon-client-render/src/gfx/panorama.rs
++++ b/crates/horizon-client-render/src/gfx/panorama.rs
+@@ -2,12 +2,16 @@
+ use crate::{Result, hud::decode_bytes};
+ use glam::Mat4;
+ use horizon_assets::resource_source::ResourceSource;
+-use std::sync::{Arc, Mutex};
++use std::{
++    sync::{Arc, Mutex},
++    time::Instant,
++};
+
+ /// Native cube order: +X, -X, +Y, -Y, +Z, -Z (CubeMapTexture.SUFFIXES).
+ const FACE_ORDER: [u8; 6] = [1, 3, 5, 4, 0, 2];
+ /// Where the cube's faces live in a resource root.
+ const BACKGROUND: &str = "assets/minecraft/textures/gui/title/background";
++const STELLAR_MOTION: &str = "assets/stellar/title/panorama_motion.txt";
+
+ /// The title screen's six faces. The cube is on the GPU only while the title
+ /// screen shows, and its texels are decoded from the faces' files each time it
+@@ -15,6 +19,7 @@
+ #[derive(Debug)]
+ pub struct Faces {
+     pub size: u32,
++    stellar_motion: bool,
+     /// The faces' PNG files in cube order; none for a one-colour cube.
+     files: Vec<Vec<u8>>,
+     /// The texel of a one-colour cube.
+@@ -44,6 +49,7 @@
+     pub fn colour(colour: [u8; 4]) -> Self {
+         Self {
+             size: 1,
++            stellar_motion: false,
+             files: Vec::new(),
+             colour,
+             decoded: Mutex::new(None),
+@@ -71,6 +77,9 @@
+         // Decoded once here to check them, and kept for the first cube.
+         Ok(Self {
+             size,
++            stellar_motion: root
++                .read(STELLAR_MOTION)
++                .is_ok_and(|tag| tag == b"stellar-1"),
+             files,
+             colour: [0; 4],
+             decoded: Mutex::new(Some(texels)),
+@@ -172,6 +181,7 @@
+     sampler: wgpu::Sampler,
+     uniform: wgpu::Buffer,
+     faces: Arc<Faces>,
++    title_started: Instant,
+     /// The cube and its bindings, while the title screen shows.
+     cube: Option<wgpu::BindGroup>,
+ }
+@@ -191,7 +201,7 @@
+         });
+         let uniform = device.create_buffer(&wgpu::BufferDescriptor {
+             label: Some("Title panorama projection"),
+-            size: 64,
++            size: 80,
+             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+             mapped_at_creation: false,
+         });
+@@ -200,7 +210,7 @@
+             entries: &[
+                 wgpu::BindGroupLayoutEntry {
+                     binding: 0,
+-                    visibility: wgpu::ShaderStages::VERTEX,
++                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                     ty: wgpu::BindingType::Buffer {
+                         ty: wgpu::BufferBindingType::Uniform,
+                         has_dynamic_offset: false,
+@@ -281,6 +291,7 @@
+             sampler,
+             uniform,
+             faces,
++            title_started: Instant::now(),
+             cube: None,
+         }
+     }
+@@ -295,11 +306,19 @@
+         yaw: f32,
+         pitch: f32,
+     ) {
+-        queue.write_buffer(
+-            &self.uniform,
+-            0,
+-            bytemuck::cast_slice(&projection(width, height, yaw, pitch).to_cols_array()),
+-        );
++        let mut uniform = [0.0; 20];
++        let fixed_yaw = if self.faces.stellar_motion { 0.0 } else { yaw };
++        uniform[..16].copy_from_slice(&projection(width, height, fixed_yaw, pitch).to_cols_array());
++        // Wrap on a complete revolution to preserve floating point precision.
++        let orbit =
++            (self.title_started.elapsed().as_secs_f64() * 0.8 % std::f64::consts::TAU) as f32;
++        uniform[16..].copy_from_slice(&[
++            width.max(1) as f32,
++            height.max(1) as f32,
++            orbit,
++            f32::from(u8::from(self.faces.stellar_motion)),
++        ]);
++        queue.write_buffer(&self.uniform, 0, bytemuck::cast_slice(&uniform));
+         if self.cube.is_none() {
+             self.cube = Some(self.cube(device, queue));
+         }
+--- a/crates/horizon-client-render/src/gfx/panorama.wgsl
++++ b/crates/horizon-client-render/src/gfx/panorama.wgsl
+@@ -1,6 +1,9 @@
+ // CubeMap's position-only cube and panorama.vsh/fsh: sample its untransformed direction.
+ override HDR_WRITE_LIGHT: bool = false;
+-struct Projection { view_proj: mat4x4<f32> }
++struct Projection {
++    view_proj: mat4x4<f32>,
++    scene: vec4<f32>,
++}
+ @group(0) @binding(0) var<uniform> projection: Projection;
+ @group(0) @binding(1) var panorama: texture_cube<f32>;
+ @group(0) @binding(2) var panorama_sampler: sampler;
+@@ -34,7 +37,49 @@
+     out.direction = position;
+     return out;
+ }
++fn star_seed(cell: vec2<f32>) -> f32 {
++    return fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
++}
++fn stars(uv: vec2<f32>, orbit: f32) -> f32 {
++    let grid = uv * vec2(126.0, 75.0);
++    let cell = floor(grid);
++    let seed = star_seed(cell);
++    let point = vec2(star_seed(cell + 6.1), star_seed(cell + 31.7));
++    let distance = length(fract(grid) - (point * 0.7 + 0.15));
++    let halo = 1.0 - smoothstep(0.035, 0.165, distance);
++    let scintillation = 0.55 + 0.45 * sin(orbit * floor(5.0 + seed * 7.0) + seed * 83.0);
++    return halo * scintillation * step(0.987, seed);
++}
++fn animate_stellar(base: vec3<f32>, screen: vec2<f32>, orbit: f32) -> vec3<f32> {
++    // The cube and shadow stay fixed. Move the filaments in the projected
++    // accretion plane and in the lensed arc above the black hole.
++    let disk = (screen - vec2(0.5, 0.58)) * vec2(1.0, 3.8);
++    let radius = length(disk);
++    let angle = atan2(disk.y, disk.x);
++    let lit = smoothstep(0.03, 0.31, base.r);
++    let band = smoothstep(0.08, 0.21, radius) * (1.0 - smoothstep(0.62, 0.91, radius));
++    let fine = sin(12.0 * (angle - orbit) + radius * 52.0);
++    let broad = sin(5.0 * (angle - orbit) - radius * 31.0);
++    let arc = (screen - vec2(0.5, 0.55)) * vec2(1.0, 0.95);
++    let arc_radius = length(arc);
++    let arc_mask = smoothstep(0.075, 0.14, arc_radius)
++        * (1.0 - smoothstep(0.24, 0.31, arc_radius))
++        * (1.0 - smoothstep(-0.025, 0.015, arc.y));
++    let lensed = sin(7.0 * (atan2(arc.y, arc.x) - orbit) + arc_radius * 53.0);
++    let gain = 1.0 + lit * (band * (0.2 * fine + 0.13 * broad) + 0.24 * arc_mask * lensed);
++    let sky = smoothstep(0.22, 0.31, length((screen - vec2(0.5, 0.5)) * vec2(1.0, 1.24)))
++        * (1.0 - smoothstep(0.025, 0.12, base.r));
++    return base * gain + vec3(0.48 * sky * stars(screen, orbit));
++}
+ @fragment fn fs_panorama(in: Out) -> @location(0) vec4<f32> {
+     let color = textureSample(panorama, panorama_sampler, in.direction);
+-    return vec4(color.rgb, select(color.a, 1.0, HDR_WRITE_LIGHT));
++    var rgb = color.rgb;
++    if projection.scene.w > 0.5 {
++        let uv = in.clip.xy / projection.scene.xy;
++        // The cubemap uses 85° vertical FOV and was authored at 16:9.
++        let aspect = projection.scene.x / projection.scene.y;
++        let screen = vec2(0.5 + (uv.x - 0.5) * aspect / (16.0 / 9.0), uv.y);
++        rgb = animate_stellar(rgb, screen, projection.scene.z);
++    }
++    return vec4(rgb, select(color.a, 1.0, HDR_WRITE_LIGHT));
+ }

@@ -27,6 +27,8 @@ def build(wallpaper, destination):
         meta = {"pack": {"description": "Stellar · Stationary Rust title",
                          "min_format": [97, 1], "max_format": [97, 1]}}
         output.writestr(ZipInfo("pack.mcmeta"), json.dumps(meta), ZIP_DEFLATED)
+        output.writestr(ZipInfo("assets/stellar/title/panorama_motion.txt"),
+                        "stellar-1", ZIP_DEFLATED)
         for index, (dx, dy, dz) in enumerate(directions):
             camera_y = dy * np.cos(pitch) - dz * np.sin(pitch)
             depth = -(dy * np.sin(pitch) + dz * np.cos(pitch))

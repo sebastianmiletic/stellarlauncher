@@ -38,7 +38,7 @@ Rust engine availability depends on Horizon's published game builds. Current ups
 | --- | --- |
 | ![A bright stone platform under the daytime sky](tools/stellar-prism/screenshots/rust-fullbright-noon.jpg) | ![The same platform still lit beneath a dark, starry sky](tools/stellar-prism/screenshots/rust-fullbright-midnight.jpg) |
 
-**Centered Rust title screen** is available as a resource pack. Import [Stellar Rust Panorama](program_info/stellar-rust-panorama.zip), enable it above **Stellar Look**, and set **Accessibility → Panorama Scroll Speed** to **0%**. The Rust scene is stationary. The Java 26.3 title shader animates the disk separately.
+**Centered Rust title screen** is available as a resource pack. Import [Stellar Rust Panorama](program_info/stellar-rust-panorama.zip), enable it above **Stellar Look**, and set **Accessibility → Panorama Scroll Speed** to **0%**. The Java 26.3 title shader already animates the disk. For Rust, the [renderer and spear movement patches](tools/archive/horizon-patches) are available for engine builds from source. The downloadable launcher still uses the stock Rust engine.
 
 ![Stellar’s Rust title screen with a full-width black hole](tools/stellar-prism/screenshots/rust-title.jpg)
 
