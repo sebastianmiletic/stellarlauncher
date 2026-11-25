@@ -47,7 +47,7 @@ The Rust engine is available for Apple silicon macOS, Windows x86-64, and Linux 
 
 ![Stellar’s Rust title screen with a full-width black hole](tools/stellar-prism/screenshots/rust-title.jpg)
 
-[See the animated Rust title preview](tools/stellar-prism/screenshots/rust-title-motion.webp). It shows the disk and stars moving around a fixed black hole. The [Apple silicon engine preview](https://github.com/sebastianmiletic/stellarlauncher/releases/tag/stellar-rust-preview-2026.11.25) includes this effect and the 26.3 spear movement patch.
+[See the animated Rust title preview](tools/stellar-prism/screenshots/rust-title-motion.webp). It shows the disk and stars moving around a fixed black hole. The [Apple silicon Rust engine](https://github.com/sebastianmiletic/stellarlauncher/releases/tag/stellar-v1.5.12) includes this effect, the Stellar window title, and the 26.3 spear movement patch. This separate engine build can be imported over a prepared 26.3 base.
 
 ### MacBook Air performance
 
