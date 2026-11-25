@@ -1299,6 +1299,7 @@ if(APPLE)
         find_library(SPARKLE_FRAMEWORK Sparkle "${CMAKE_BINARY_DIR}/frameworks/Sparkle")
         set_property(SOURCE Application.cpp APPEND PROPERTY COMPILE_DEFINITIONS SPARKLE_ENABLED)
         set_property(SOURCE updater/MacSparkleUpdater.mm APPEND PROPERTY COMPILE_OPTIONS -fobjc-arc)
+        set_source_files_properties(updater/MacSparkleUpdater.mm PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
     endif()
 
     target_link_libraries(Launcher_logic
