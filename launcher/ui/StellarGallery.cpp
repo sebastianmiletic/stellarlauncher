@@ -1889,6 +1889,11 @@ void StellarGallery::editRustInstance(MinecraftInstance* instance)
     tabs->addTab(tr("Shaders"));
     tabs->setExpanding(false);
     tabs->setAccessibleName(tr("Content type"));
+    tabs->setStyleSheet(
+        "QTabBar::tab { color: #bfbec8; padding: 5px 12px; margin-right: 3px; border-radius: 6px; }"
+        "QTabBar::tab:hover { background: #242429; }"
+        "QTabBar::tab:selected { color: #f1f0f4; background: #303037; font-weight: 600; }"
+        "QTabBar::tab:focus { border: 1px solid palette(highlight); }");
     header->addWidget(tabs, 1);
     auto* add = new GalleryButton(tr("+ Add"), dialog);
     add->setAccessibleName(tr("Add content"));
@@ -1902,7 +1907,12 @@ void StellarGallery::editRustInstance(MinecraftInstance* instance)
     auto* files = new QListWidget(dialog);
     files->setAccessibleName(tr("Installed content"));
     files->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    files->setAlternatingRowColors(true);
+    files->setStyleSheet(
+        "QListWidget { background: #141418; color: #efedf3; border: 1px solid #28282d; border-radius: 8px; padding: 4px; outline: none; }"
+        "QListWidget::item { min-height: 28px; padding: 1px 8px; border-radius: 5px; }"
+        "QListWidget::item:hover { background: #212126; }"
+        "QListWidget::item:selected { background: #2c2c34; color: #f1f0f4; }"
+        "QListWidget::item:focus { border: 1px solid palette(highlight); }");
     shell->addWidget(files, 1);
     auto* footer = new QHBoxLayout;
     auto* status = new QLabel(dialog);
@@ -2111,10 +2121,19 @@ void StellarGallery::editRustInstance(MinecraftInstance* instance)
             run({"packs", enabled ? "on" : "off", "--instance", "horizon", "--kind", category(), entry.file});
         } else if (editable() && !entry.id.isEmpty()) {
             // Native toggles need an explicit false, which the browser's generic disable drops.
-            if (setRustModEnabled(root, entry.id, enabled))
-                load();
-            else
+            if (!setRustModEnabled(root, entry.id, enabled)) {
                 status->setText(tr("Couldn’t change mod"));
+                return;
+            }
+            for (auto& stored : *content) {
+                if (stored.file == entry.file) {
+                    stored.enabled = enabled;
+                    break;
+                }
+            }
+            const QSignalBlocker blocked(files);
+            item->setCheckState(enabled ? Qt::Checked : Qt::Unchecked);
+            status->clear();
         }
     });
     connect(remove, &QPushButton::clicked, dialog, [=] {
