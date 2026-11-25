@@ -78,7 +78,11 @@ LauncherPage::LauncherPage(QWidget* parent) : QWidget(parent), ui(new Ui::Launch
 
     loadSettings();
 
+#ifdef Q_OS_MACOS
+    ui->updateSettingsBox->hide();
+#else
     ui->updateSettingsBox->setHidden(!APPLICATION->updater());
+#endif
 }
 
 LauncherPage::~LauncherPage()
@@ -235,10 +239,13 @@ void LauncherPage::applySettings()
     auto* s = APPLICATION->settings();
 
     // Updates
+#ifndef Q_OS_MACOS
     if (APPLICATION->updater()) {
         APPLICATION->updater()->setAutomaticallyChecksForUpdates(ui->autoUpdateCheckBox->isChecked());
         APPLICATION->updater()->setUpdateCheckInterval(ui->updateIntervalSpinBox->value() * 3600);
     }
+
+#endif
 
     s->set("MenuBarInsteadOfToolBar", ui->preferMenuBarCheckBox->isChecked());
 
@@ -319,10 +326,13 @@ void LauncherPage::loadSettings()
 {
     auto* s = APPLICATION->settings();
     // Updates
+#ifndef Q_OS_MACOS
     if (APPLICATION->updater()) {
         ui->autoUpdateCheckBox->setChecked(APPLICATION->updater()->getAutomaticallyChecksForUpdates());
         ui->updateIntervalSpinBox->setValue(APPLICATION->updater()->getUpdateCheckInterval() / 3600);
     }
+
+#endif
 
     ui->preferMenuBarCheckBox->setChecked(s->get("MenuBarInsteadOfToolBar").toBool());
 

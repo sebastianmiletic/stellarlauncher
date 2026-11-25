@@ -1480,13 +1480,6 @@ void Application::performMainStartupAction()
             return;
         }
     }
-#if defined(SPARKLE_ENABLED)
-    if (updaterEnabled() && !m_updater) {
-        auto* updater = new MacSparkleUpdater();
-        m_updater.reset(updater);
-        QTimer::singleShot(1500, updater, &MacSparkleUpdater::checkOnStartup);
-    }
-#endif
     if (!m_galleryAction.isEmpty() && performGalleryAction(m_galleryAction, {})) {
         if (shouldExitNow()) exit(0);
         return;
@@ -1497,7 +1490,13 @@ void Application::performMainStartupAction()
         qDebug() << "<> Main window shown.";
     }
 
-#ifndef Q_OS_MACOS
+#if defined(SPARKLE_ENABLED)
+    if (updaterEnabled() && !m_updater) {
+        auto* updater = new MacSparkleUpdater(m_mainWindow);
+        m_updater.reset(updater);
+        updater->checkOnStartup();
+    }
+#elif !defined(Q_OS_MACOS)
     if (updaterEnabled() && !m_updater) {
         m_updater.reset(new PrismExternalUpdater(m_mainWindow, m_rootPath, m_dataPath));
     }
@@ -1882,7 +1881,7 @@ static bool stageRustDefaults(const QDir& game)
         !FS::write(game.filePath("horizon-extras.txt"), "fullbright:true\n"))
         return false;
     if (!game.exists("horizon-graphics.txt") &&
-        !FS::write(game.filePath("horizon-graphics.txt"), "pickedShaderPack:horizon:stellar_daybreak_sky\nresolutionScale:65\n"))
+        !FS::write(game.filePath("horizon-graphics.txt"), "pickedShaderPack:horizon:stellar_daybreak_sky\nresolutionScale:100\n"))
         return false;
     return bool(FS::write(game.filePath("options.txt"),
                           "enableVsync:false\nmaxFps:260\nsprintWindow:10\nsimulationDistance:5\n"

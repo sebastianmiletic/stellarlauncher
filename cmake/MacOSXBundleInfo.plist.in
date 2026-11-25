@@ -52,8 +52,8 @@
     <string>${MACOSX_SPARKLE_UPDATE_PUBLIC_KEY}</string>
     <key>SUEnableAutomaticChecks</key>
     <true/>
-    <key>SUAutomaticallyUpdate</key>
-    <true/>
+    <key>SUAllowsAutomaticUpdates</key>
+    <false/>
     <key>SUFeedURL</key>
     <string>${MACOSX_SPARKLE_UPDATE_FEED_URL}</string>
     <key>CFBundleDocumentTypes</key>

@@ -306,7 +306,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         ui->actionDISCORD->setVisible(!BuildConfig.DISCORD_URL.isEmpty());
         ui->actionREDDIT->setVisible(!BuildConfig.SUBREDDIT_URL.isEmpty());
 
+#ifdef Q_OS_MACOS
+        ui->actionCheckUpdate->setVisible(false);
+#else
         ui->actionCheckUpdate->setVisible(APPLICATION->updaterEnabled());
+#endif
 
 #ifndef Q_OS_MACOS
         ui->actionAddToPATH->setVisible(false);

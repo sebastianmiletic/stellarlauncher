@@ -2871,16 +2871,6 @@ void StellarGallery::showPreferences()
            {{tr("All loaders"), ""}, {tr("Vanilla"), "Vanilla"}, {tr("Rust"), "Horizon"}, {"Fabric", "Fabric"}, {"Forge", "Forge"},
             {"NeoForge", "NeoForge"}, {"Quilt", "Quilt"}, {"LiteLoader", "LiteLoader"}}, [this] { rebuild(); });
     check(behavior, tr("Fit game window to screen"), "StellarFillScreen");
-    auto* updates = new GalleryButton(tr("Check for Updates…"), preferences);
-    updates->setEnabled(APPLICATION->updatesAreAllowed());
-    connect(APPLICATION, &Application::updateAllowedChanged, updates, &QWidget::setEnabled);
-    connect(updates, &QPushButton::clicked, preferences, [] {
-        if (APPLICATION->updater())
-            APPLICATION->triggerUpdateCheck();
-        else
-            QDesktopServices::openUrl(QUrl("https://github.com/sebastianmiletic/stellarlauncher/releases/latest"));
-    });
-    behavior->addWidget(updates);
     check(behavior, tr("Match mods on version change"), "StellarAutoMatchMods");
     auto* account = new GalleryButton(tr("Microsoft App ID…"), preferences);
     behavior->addWidget(account);

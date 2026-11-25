@@ -26,6 +26,8 @@
 /*!
  * An implementation for the updater on macOS that uses the Sparkle framework.
  */
+class QWidget;
+
 class MacSparkleUpdater : public ExternalUpdater {
     Q_OBJECT
 
@@ -33,7 +35,7 @@ class MacSparkleUpdater : public ExternalUpdater {
     /*!
      * Start the Sparkle updater, which automatically checks for updates if necessary.
      */
-    MacSparkleUpdater();
+    explicit MacSparkleUpdater(QWidget* parent);
     ~MacSparkleUpdater() override;
 
     /*!

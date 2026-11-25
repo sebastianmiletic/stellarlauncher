@@ -16,7 +16,7 @@ Stellar Launcher is a compact Minecraft Java launcher built on Prism Launcher’
 - **Play Minecraft** by opening an instance and selecting **Play**. To link an account, use **Minecraft Accounts → Add Microsoft**. Stellar installs Java and Minecraft directly. Open a saved world from **Edit → Worlds** or **Singleplayer** in Minecraft.
 - **Stellar Look** adds a fixed black-hole scene with an animated accretion disk on Java 26.3 and grayscale menus to Minecraft Java 1.21.9 through 26.3. Stellar enables the title screen on the first launch of each supported instance. To enable it again, use **General Settings → Use the Stellar Minecraft title screen**.
 - **Fit game window to screen** in **General Settings** opens Java and Rust games within the usable display area. The game stays in a desktop window.
-- **Updates** appear on startup or under **General Settings → Check for Updates**. The macOS installer verifies an Ed25519 signature through Sparkle. Windows portable installs and Linux AppImages select a matching GitHub release package and verify its SHA-256 digest before replacing the installed files.
+- **Updates** are checked on startup. On macOS, Stellar shows download progress and lets you choose when to restart. Sparkle verifies the Ed25519 signature before installation. Windows portable installs and Linux AppImages select a matching GitHub release package and verify its SHA-256 digest before replacing the installed files.
 
 ## Install
 
@@ -33,7 +33,7 @@ Stellar Launcher is a compact Minecraft Java launcher built on Prism Launcher’
 
 Choose **Rust** when creating an instance. Stellar includes the required setup tools and starts the game directly.
 
-On first use, open **Edit → Rust Setup** from the instance. Download the engine, sign in with a Microsoft account that owns Minecraft Java Edition, then choose **Download Game Assets**. After that, use **Play**. The game engine and assets are downloaded on demand. New profiles enable the Stellar title, Daybreak Sky, Fullbright, double-tap sprint, 65% render scale, and uncapped rendering with VSync off. Existing profiles retain their own game settings.
+On first use, open **Edit → Rust Setup** from the instance. Download the engine, sign in with a Microsoft account that owns Minecraft Java Edition, then choose **Download Game Assets**. After that, use **Play**. The game engine and assets are downloaded on demand. New profiles enable the Stellar title, Daybreak Sky, Fullbright, double-tap sprint, native render resolution, and uncapped rendering with VSync off. Existing profiles retain their own game settings.
 
 The Rust engine is available for Apple silicon macOS, Windows x86-64, and Linux x86-64 when the upstream engine download is available. The Windows ARM64, macOS Intel, and Linux ARM64 packages support Java. [Bundled helper source and license](https://github.com/arismoko/horizon/tree/65686f40f394cbd80771b18cd92d911543c9c967)
 
@@ -43,11 +43,11 @@ The Rust engine is available for Apple silicon macOS, Windows x86-64, and Linux 
 | --- | --- |
 | ![A bright stone platform under the daytime sky](tools/stellar-prism/screenshots/rust-fullbright-noon.jpg) | ![The same platform still lit beneath a dark, starry sky](tools/stellar-prism/screenshots/rust-fullbright-midnight.jpg) |
 
-**Centered Rust title screen** is available as a resource pack. Import [Stellar Rust Panorama](program_info/stellar-rust-panorama.zip), enable it above **Stellar Look**, and set **Accessibility → Panorama Scroll Speed** to **0%**. The Java 26.3 title shader already animates the disk. For Rust, the [renderer and spear movement patches](tools/archive/horizon-patches) are available for engine builds from source. The downloadable launcher still uses the stock Rust engine.
+**Centered Rust title screen** is available as a resource pack. Import [Stellar Rust Panorama](program_info/stellar-rust-panorama.zip), enable it above **Stellar Look**, and set **Accessibility → Panorama Scroll Speed** to **0%**. The Java 26.3 title shader already animates the disk. For Rust, the [renderer and spear movement patches](tools/archive/horizon-patches) are available for engine builds from source. The Rust Setup downloader installs the upstream engine.
 
 ![Stellar’s Rust title screen with a full-width black hole](tools/stellar-prism/screenshots/rust-title.jpg)
 
-[See the animated Rust title preview](tools/stellar-prism/screenshots/rust-title-motion.webp). It shows the disk and stars moving around a fixed black hole. The [Apple silicon Rust engine](https://github.com/sebastianmiletic/stellarlauncher/releases/tag/stellar-v1.5.12) includes this effect, the Stellar window title, and the 26.3 spear movement patch. This separate engine build can be imported over a prepared 26.3 base.
+[See the animated Rust title preview](tools/stellar-prism/screenshots/rust-title-motion.webp). It shows the disk and stars moving around a fixed black hole. The [Apple silicon Rust engine](https://github.com/sebastianmiletic/stellarlauncher/releases/tag/stellar-v1.5.13) includes this effect, the Stellar window title, and the 26.3 spear movement patch. This separate engine build can be imported over a prepared 26.3 base.
 
 ### MacBook Air performance
 
