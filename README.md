@@ -15,7 +15,8 @@ Stellar Launcher is a compact Minecraft Java launcher built on Prism Launcher’
 - **Change Minecraft version** in **Edit → Version**. Select the Minecraft component and choose **Change version**. Review compatible mod downloads after the component change. Stellar reports missing and locked mods so you can review them before launching.
 - **Play Minecraft** by opening an instance and selecting **Play**. To link an account, use **Minecraft Accounts → Add Microsoft**. Stellar installs Java and Minecraft directly. Open a saved world from **Edit → Worlds** or **Singleplayer** in Minecraft.
 - **Stellar Look** adds a fixed black-hole scene with an animated accretion disk on Java 26.3 and grayscale menus to Minecraft Java 1.21.9 through 26.3. Stellar enables the title screen on the first launch of each supported instance. To enable it again, use **General Settings → Use the Stellar Minecraft title screen**.
-- **Updates** use Sparkle on macOS. Stellar checks in the background on startup when automatic updates are enabled. Updates are installed from signed releases. Release builds without a configured Sparkle key and feed use manual downloads from GitHub.
+- **Fit game window to screen** in **General Settings** opens Java and Rust games within the usable display area. The game stays in a desktop window.
+- **Updates** appear on startup or under **General Settings → Check for Updates**. The macOS installer verifies an Ed25519 signature through Sparkle. Windows portable installs and Linux AppImages select a matching GitHub release package and verify its SHA-256 digest before replacing the installed files.
 
 ## Install
 
@@ -34,9 +35,9 @@ Choose **Rust** when creating an instance. Stellar includes the required setup t
 
 On first use, open **Edit → Rust Setup** from the instance. Download the engine, sign in with a Microsoft account that owns Minecraft Java Edition, then choose **Download Game Assets**. After that, use **Play**. The game engine and assets are downloaded on demand. New profiles enable the Stellar title, Daybreak Sky, Fullbright, double-tap sprint, 65% render scale, and uncapped rendering with VSync off. Existing profiles retain their own game settings.
 
-Rust engine availability depends on Horizon's published game builds. Current upstream releases provide a native game for macOS on Apple silicon, Windows x86-64, and Linux x86-64. The Windows ARM64, macOS Intel, and Linux ARM64 Stellar packages support Java. The bundled Horizon helper includes its license and exact source reference. [Upstream game releases](https://github.com/horizon-rust/horizon/releases) · [Horizon helper source](https://github.com/horizon-rust/horizon/tree/65686f40f394cbd80771b18cd92d911543c9c967)
+The Rust engine is available for Apple silicon macOS, Windows x86-64, and Linux x86-64 when the upstream engine download is available. The Windows ARM64, macOS Intel, and Linux ARM64 packages support Java. [Bundled helper source and license](https://github.com/arismoko/horizon/tree/65686f40f394cbd80771b18cd92d911543c9c967)
 
-**Daybreak Sky · Stellar** lets Daybreak draw the sky while Horizon applies its own terrain lighting. With **Fullbright** enabled in Horizon’s settings, blocks use the same white lightmap as Fullbright UB and the sky still darkens at night. Horizon applies Fullbright in singleplayer, LAN worlds you host, and Replay Studio. The sky pack is attached to the release and can be imported from **Edit → Import Resource or Shader Pack**.
+**Daybreak Sky · Stellar** keeps the Daybreak sky and the Rust engine’s terrain lighting. With **Fullbright** enabled in the game settings, blocks use the same white lightmap as Fullbright UB and the sky still darkens at night. The Rust engine applies Fullbright in singleplayer, LAN worlds you host, and Replay Studio. The sky pack is attached to the release and can be imported from **Edit → Import Resource or Shader Pack**.
 
 | Fullbright at noon | Fullbright at midnight |
 | --- | --- |
@@ -52,7 +53,7 @@ Rust engine availability depends on Horizon's published game builds. Current ups
 
 | Test | Average | 1% low |
 | --- | ---: | ---: |
-| Horizon village benchmark | 626 FPS | 266 FPS |
+| Rust village benchmark | 626 FPS | 266 FPS |
 | Short modded local-world run | 624 FPS | 162 FPS |
 
 The tests used an Apple M4 MacBook Air (Mac16,12, 10 CPU cores, 8 GPU cores, 16 GB RAM) with macOS 27.0 and Metal. Both ran locally at 2560×1440 output with VSync off. The village test used 8 render chunks, 5 simulation chunks, and 75% render scale on battery power. The modded run used 6 render chunks and 65% render scale. FPS varies with the world, shader effects, and background load. These measurements are Rust-only. [Village benchmark data](tools/stellar-prism/benchmarks/rust-village-m4.json)

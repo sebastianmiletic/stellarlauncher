@@ -9,7 +9,7 @@ on:
         default: All
         options: [All, macOS, Windows, Linux]
       publish:
-        description: Stage a release draft for signing after all platforms pass
+        description: Verify all six packages for a signed release
         type: boolean
         default: false
 
@@ -135,12 +135,10 @@ jobs:
           compression-level: 0
 
   release:
-    name: Publish downloads
+    name: Verify release packages
     if: inputs.publish && inputs.platform == 'All'
     needs: package
     runs-on: ubuntu-slim
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -150,9 +148,7 @@ jobs:
           pattern: StellarLauncher-*
           path: downloads
           merge-multiple: true
-      - name: Publish the verified packages
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Verify the release files
         run: |
           set -euo pipefail
           version="$(sed -nE 's/^set\(Launcher_VERSION_(MAJOR|MINOR|PATCH) ([0-9]+)\)$/\2/p' CMakeLists.txt | paste -sd . -)"
@@ -167,5 +163,5 @@ jobs:
             test -s "downloads/StellarLauncher-$version-Linux-$arch.AppImage"
             test -s "downloads/StellarLauncher-$version-Linux-$arch.AppImage.sha256"
           done
-          gh release create "stellar-v$version" downloads/* program_info/stellar-daybreak-sky.hshader program_info/stellar-rust-panorama.zip \
-            --target "$GITHUB_SHA" --title "Stellar Launcher $version" --draft --generate-notes
+          (cd downloads && sha256sum -c ./*.sha256)
+          printf 'Sign both macOS packages using tools/archive/package-update.py before publishing.\n'
