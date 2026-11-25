@@ -20,6 +20,10 @@
 #include <QFileDialog>
 #include <QFrame>
 #include <QImageReader>
+#include <QInputDialog>
+#include <QMenu>
+#include <QTabBar>
+#include <toml++/toml.h>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -1798,214 +1802,416 @@ void StellarGallery::trashInstance(const QString& id)
     cancel->setFocus();
 }
 
+namespace {
+struct RustModManifest {
+    QString id;
+    QString name;
+    bool native = false;
+};
+
+RustModManifest readRustMod(const QString& path)
+{
+    const auto manifest = MMCZip::ArchiveReader(path).readFile("horizon-mod.toml", 128 * 1024);
+    if (!manifest)
+        return {};
+    toml::table table;
+#if TOML_EXCEPTIONS
+    try {
+        table = toml::parse(manifest.value().toStdString());
+    } catch (const std::exception&) {
+        return {};
+    }
+#else
+    auto parsed = toml::parse(manifest.value().toStdString());
+    if (!parsed)
+        return {};
+    table = parsed.table();
+#endif
+    const auto id = QString::fromStdString(table["id"].value_or(std::string{}));
+    static const QRegularExpression validId("^(?!(?:con|prn|aux|nul|(?:com|lpt)[1-9])$)[a-z0-9_]{1,64}$");
+    if (!validId.match(id).hasMatch())
+        return {};
+    return {id, QString::fromStdString(table["name"].value_or(std::string{})), table["native"].is_table()};
+}
+
+// The same switches the game's Mods screen reads, including explicit false for native mods.
+bool setRustModEnabled(const QDir& root, const QString& id, bool enabled)
+{
+    const auto path = root.filePath("horizon-mods.txt");
+    QFile previous(path);
+    QByteArray contents;
+    if (previous.exists()) {
+        if (!previous.open(QIODevice::ReadOnly))
+            return false;
+        contents = previous.readAll();
+        if (previous.error() != QFileDevice::NoError)
+            return false;
+        previous.close();
+    }
+    const auto key = "mod." + id.toUtf8();
+    auto lines = contents.split('\n');
+    lines.removeIf([&key](const QByteArray& line) {
+        const auto separator = line.indexOf(':');
+        return separator >= 0 && line.first(separator).trimmed() == key;
+    });
+    if (!lines.isEmpty() && lines.last().isEmpty())
+        lines.removeLast();
+    lines.append(key + (enabled ? ":true" : ":false"));
+    const auto updated = lines.join('\n') + '\n';
+    QSaveFile file(path);
+    return file.open(QIODevice::WriteOnly) && file.write(updated) == updated.size() && file.commit();
+}
+
+struct RustContent {
+    QString file;
+    QString title;
+    QString id;
+    QString project;
+    bool enabled = false;
+    bool native = false;
+    bool unsupported = false;
+};
+}
+
+void StellarGallery::editRustInstance(MinecraftInstance* instance)
+{
+    dismissPanel();
+    QVBoxLayout* shell;
+    auto* dialog = galleryDialog(instance->name(), shell);
+    const QDir root(instance->gameRoot());
+    const auto current = QPointer(instance);
+    const auto nativeRemoval = std::make_shared<QString>();
+
+    auto* header = new QHBoxLayout;
+    auto* tabs = new QTabBar(dialog);
+    tabs->addTab(tr("Mods"));
+    tabs->addTab(tr("Resource Packs"));
+    tabs->addTab(tr("Shaders"));
+    tabs->setExpanding(false);
+    tabs->setAccessibleName(tr("Content type"));
+    header->addWidget(tabs, 1);
+    auto* add = new GalleryButton(tr("+ Add"), dialog);
+    add->setAccessibleName(tr("Add content"));
+    header->addWidget(add);
+    auto* options = new GalleryButton(QStringLiteral("⋯"), dialog);
+    options->setAccessibleName(tr("Instance tools"));
+    options->setToolTip(tr("Instance tools"));
+    header->addWidget(options);
+    shell->addLayout(header);
+
+    auto* files = new QListWidget(dialog);
+    files->setAccessibleName(tr("Installed content"));
+    files->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    files->setAlternatingRowColors(true);
+    shell->addWidget(files, 1);
+    auto* footer = new QHBoxLayout;
+    auto* status = new QLabel(dialog);
+    status->setTextFormat(Qt::PlainText);
+    status->setWordWrap(true);
+    footer->addWidget(status, 1);
+    auto* remove = new GalleryButton(tr("Remove"), dialog);
+    remove->setEnabled(false);
+    footer->addWidget(remove);
+    shell->addLayout(footer);
+
+    auto* tools = new QMenu(options);
+    connect(tools->addAction(tr("Game folder")), &QAction::triggered, dialog, [root] {
+        if (root.mkpath("."))
+            QDesktopServices::openUrl(QUrl::fromLocalFile(root.absolutePath()));
+    });
+    connect(tools->addAction(tr("Wallpaper")), &QAction::triggered, dialog, [this, dialog, id = instance->id()] {
+        dialog->close();
+        showWallpapers(id);
+    });
+    connect(tools->addAction(tr("Rust setup")), &QAction::triggered, dialog, [] { APPLICATION->openHorizonSetup(); });
+    options->setMenu(tools);
+
+    auto* operation = new QProcess(this);
+    auto environment = QProcessEnvironment::systemEnvironment();
+    environment.insert("HORIZON_HOME", root.absolutePath());
+    environment.insert("HORIZON_LAUNCHER_NO_SELF_UPDATE", "1");
+    operation->setProcessEnvironment(environment);
+    operation->setProcessChannelMode(QProcess::MergedChannels);
+    connect(dialog, &QObject::destroyed, operation, [operation] {
+        if (operation->state() == QProcess::NotRunning)
+            operation->deleteLater();
+        else
+            connect(operation, &QProcess::finished, operation, &QObject::deleteLater);
+    });
+
+    auto* index = new QProcess(dialog);
+    index->setProcessEnvironment(environment);
+    auto content = std::make_shared<QList<RustContent>>();
+    const auto populate = [files, status, remove, content] {
+        const auto selected = files->currentItem() ? files->currentItem()->data(Qt::UserRole).toString() : QString();
+        const QSignalBlocker blocked(files);
+        files->clear();
+        for (const auto& entry : *content) {
+            auto* item = new QListWidgetItem(entry.title, files);
+            item->setData(Qt::UserRole, entry.file);
+            if (!entry.unsupported && (!entry.id.isEmpty() || files->property("isPack").toBool())) {
+                item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+                item->setCheckState(entry.enabled ? Qt::Checked : Qt::Unchecked);
+            }
+            item->setToolTip(entry.native ? tr("Native mod. Some changes may require rebuilding the engine.") : entry.file);
+            if (entry.file == selected)
+                files->setCurrentItem(item);
+        }
+        if (!files->currentItem() && files->count())
+            files->setCurrentRow(0);
+        remove->setEnabled(files->currentItem());
+        status->setText(files->count() ? QString() : tr("Nothing installed"));
+    };
+
+    const auto category = [tabs] { return tabs->currentIndex() == 1 ? QStringLiteral("resource") : QStringLiteral("shader"); };
+    const auto load = [index, operation, files, add, remove, status, tabs, category, content] {
+        if (index->state() != QProcess::NotRunning || operation->state() != QProcess::NotRunning)
+            return;
+        const auto program = APPLICATION->horizonLauncher();
+        if (program.isEmpty()) {
+            status->setText(tr("Rust tools unavailable"));
+            add->setEnabled(false);
+            return;
+        }
+        content->clear();
+        files->setProperty("isPack", tabs->currentIndex() != 0);
+        files->setEnabled(false);
+        add->setEnabled(false);
+        remove->setEnabled(false);
+        status->setText(tr("Loading…"));
+        const QStringList command = tabs->currentIndex() == 0
+            ? QStringList{"mods", "list", "--json", "--instance", "horizon"}
+            : QStringList{"packs", "list", "--json", "--kind", category(), "--instance", "horizon"};
+        index->start(program, command);
+    };
+    connect(index, &QProcess::finished, dialog, [=](int code, QProcess::ExitStatus exit) {
+        add->setEnabled(true);
+        files->setEnabled(true);
+        if (code != 0 || exit != QProcess::NormalExit) {
+            files->clear();
+            status->setText(tr("Couldn’t load content"));
+            return;
+        }
+        const auto entries = QJsonDocument::fromJson(index->readAllStandardOutput()).array();
+        if (files->property("isPack").toBool()) {
+            for (const auto& value : entries) {
+                const auto item = value.toObject();
+                const auto file = item["file"].toString();
+                if (!file.isEmpty() && QFileInfo(file).fileName() == file && !file.startsWith('-'))
+                    content->append({file, item["title"].toString(file), {}, {}, item["enabled"].toBool(), false,
+                                     !item["unsupported"].toString().isEmpty()});
+            }
+        } else {
+            QHash<QString, QJsonObject> managed;
+            for (const auto& value : entries) {
+                const auto item = value.toObject();
+                if (item["kind"].toString() == "mod")
+                    managed.insert(QDir::fromNativeSeparators(item["file"].toString()), item);
+            }
+            QHash<QString, bool> enabled;
+            QFile switches(root.filePath("horizon-mods.txt"));
+            if (switches.open(QIODevice::ReadOnly)) {
+                while (!switches.atEnd()) {
+                    const auto line = switches.readLine().trimmed();
+                    const auto split = line.indexOf(':');
+                    if (line.startsWith("mod.") && split > 4)
+                        enabled.insert(QString::fromUtf8(line.mid(4, split - 4).trimmed()), line.mid(split + 1).trimmed() == "true");
+                }
+            }
+            for (const auto& folder : {"horizon-mods", "horizon-native-mods"}) {
+                const auto directory = QDir(root.filePath(folder));
+                for (const auto& file : directory.entryInfoList({"*.hmod", "*.wasm"}, QDir::Files | QDir::NoSymLinks, QDir::Name)) {
+                    const auto path = root.relativeFilePath(file.absoluteFilePath());
+                    const auto project = managed.value(path);
+                    const auto mod = file.suffix() == "hmod" ? readRustMod(file.absoluteFilePath()) : RustModManifest{};
+                    const auto title = project["title"].toString(mod.name.isEmpty() ? file.completeBaseName() : mod.name);
+                    const auto native = mod.native || directory.dirName() == "horizon-native-mods";
+                    content->append({path, title, mod.id, project["project"].toString(), enabled.value(mod.id, native), native});
+                }
+            }
+        }
+        populate();
+    });
+    connect(index, &QProcess::errorOccurred, dialog, [=](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart) {
+            add->setEnabled(true);
+            files->setEnabled(true);
+            files->clear();
+            status->setText(tr("Couldn’t load content"));
+        }
+    });
+    const auto editable = [operation, index, current, status] {
+        if (!current || current->isRunning()) {
+            status->setText(tr("Close Minecraft to make changes"));
+            return false;
+        }
+        return operation->state() == QProcess::NotRunning && index->state() == QProcess::NotRunning;
+    };
+    const auto run = [=](const QStringList& args) {
+        if (!editable())
+            return false;
+        const auto program = APPLICATION->horizonLauncher();
+        if (program.isEmpty())
+            return false;
+        add->setEnabled(false);
+        remove->setEnabled(false);
+        files->setEnabled(false);
+        tabs->setEnabled(false);
+        status->setText(tr("Working…"));
+        operation->start(program, args);
+        return true;
+    };
+    const auto done = [=](bool success) {
+        const auto detail = QString::fromUtf8(operation->readAll()).trimmed();
+        tabs->setEnabled(true);
+        const auto removedId = std::exchange(*nativeRemoval, {});
+        if (success && (removedId.isEmpty() || setRustModEnabled(root, removedId, false))) {
+            load();
+        } else {
+            add->setEnabled(true);
+            files->setEnabled(true);
+            remove->setEnabled(files->currentItem());
+            status->setText(tr("Couldn’t change content"));
+            status->setToolTip(detail);
+        }
+    };
+    connect(operation, &QProcess::finished, dialog, [done](int code, QProcess::ExitStatus state) {
+        done(code == 0 && state == QProcess::NormalExit);
+    });
+    connect(operation, &QProcess::errorOccurred, dialog, [done](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart)
+            done(false);
+    });
+    connect(tabs, &QTabBar::currentChanged, dialog, load);
+    connect(index, &QProcess::stateChanged, tabs, [tabs](QProcess::ProcessState state) {
+        tabs->setEnabled(state == QProcess::NotRunning);
+    });
+    connect(files, &QListWidget::currentItemChanged, remove, [remove](QListWidgetItem* item) { remove->setEnabled(item != nullptr); });
+
+    const auto lookup = [content](const QListWidgetItem* item) -> RustContent {
+        if (item) {
+            const auto path = item->data(Qt::UserRole).toString();
+            for (const auto& entry : *content) {
+                if (entry.file == path)
+                    return entry;
+            }
+        }
+        return {};
+    };
+    connect(files, &QListWidget::itemChanged, dialog, [=](QListWidgetItem* item) {
+        const auto entry = lookup(item);
+        const auto enabled = item->checkState() == Qt::Checked;
+        if (entry.file.isEmpty() || entry.enabled == enabled)
+            return;
+        {
+            const QSignalBlocker blocked(files);
+            item->setCheckState(entry.enabled ? Qt::Checked : Qt::Unchecked);
+        }
+        if (files->property("isPack").toBool()) {
+            run({"packs", enabled ? "on" : "off", "--instance", "horizon", "--kind", category(), entry.file});
+        } else if (editable() && !entry.id.isEmpty()) {
+            // Native toggles need an explicit false, which the browser's generic disable drops.
+            if (setRustModEnabled(root, entry.id, enabled))
+                load();
+            else
+                status->setText(tr("Couldn’t change mod"));
+        }
+    });
+    connect(remove, &QPushButton::clicked, dialog, [=] {
+        if (!editable())
+            return;
+        const auto entry = lookup(files->currentItem());
+        if (entry.file.isEmpty() ||
+            QMessageBox::question(dialog, tr("Remove content?"), entry.title, QMessageBox::Yes | QMessageBox::Cancel) != QMessageBox::Yes)
+            return;
+        if (!editable())
+            return;
+        if (files->property("isPack").toBool()) {
+            run({"packs", "remove", "--instance", "horizon", "--kind", category(), entry.file});
+        } else if (!entry.project.isEmpty() && !entry.project.startsWith('-')) {
+            if (entry.native && !entry.id.isEmpty() && !setRustModEnabled(root, entry.id, false)) {
+                status->setText(tr("Couldn’t disable mod"));
+                return;
+            }
+            if (run({"mods", "remove", "--instance", "horizon", entry.project}) && entry.native)
+                *nativeRemoval = entry.id;
+        } else {
+            const auto path = root.filePath(entry.file);
+            if (entry.native && !entry.id.isEmpty() && !setRustModEnabled(root, entry.id, false)) {
+                status->setText(tr("Couldn’t disable mod"));
+                return;
+            }
+            if (QFile::moveToTrash(path)) {
+                load();
+            } else {
+                if (entry.native && entry.enabled && !entry.id.isEmpty())
+                    setRustModEnabled(root, entry.id, true);
+                status->setText(tr("Couldn’t move mod to Trash"));
+            }
+        }
+    });
+
+    auto* addMenu = new QMenu(add);
+    connect(addMenu->addAction(tr("Browse")), &QAction::triggered, dialog, [] {
+        QDesktopServices::openUrl(QUrl("https://playhorizon.dev/mods"));
+    });
+    connect(addMenu->addAction(tr("From link…")), &QAction::triggered, dialog, [=] {
+        if (!editable())
+            return;
+        bool accepted = false;
+        auto slug = QInputDialog::getText(dialog, tr("Add project"), tr("Project link or slug"), QLineEdit::Normal, {}, &accepted).trimmed();
+        if (!accepted)
+            return;
+        const QUrl url(slug);
+        if (url.scheme() == "https" && url.host() == "playhorizon.dev" && url.path().startsWith("/mods/"))
+            slug = url.path().mid(6).section('/', 0, 0);
+        static const QRegularExpression valid("^[a-zA-Z0-9_][a-zA-Z0-9_-]*$");
+        if (valid.match(slug).hasMatch())
+            run({"mods", "install", "--source", "horizon", "--instance", "horizon", slug});
+        else
+            status->setText(tr("Enter a valid project link or slug"));
+    });
+    connect(addMenu->addAction(tr("From file…")), &QAction::triggered, dialog, [=] {
+        if (!editable())
+            return;
+        const bool modTab = tabs->currentIndex() == 0;
+        const auto path = QFileDialog::getOpenFileName(dialog, tr("Add content"), {},
+            modTab ? tr("Rust mods (*.hmod)") : tr("Packs (*.zip *.hshader)"));
+        if (path.isEmpty() || !editable())
+            return;
+        if (!modTab) {
+            run({"packs", "add", "--instance", "horizon", path});
+            return;
+        }
+        const auto mod = readRustMod(path);
+        if (mod.id.isEmpty() || mod.native) {
+            status->setText(tr("Choose a packaged content mod. Add native mods from a project link."));
+            return;
+        }
+        const auto target = root.filePath("horizon-mods/" + mod.id + ".hmod");
+        if (!root.mkpath("horizon-mods") || !QFile::copy(path, target)) {
+            status->setText(tr("Couldn’t add mod. A copy may already be installed."));
+            return;
+        }
+        if (!setRustModEnabled(root, mod.id, true)) {
+            QFile::remove(target);
+            status->setText(tr("Couldn’t enable mod"));
+            return;
+        }
+        load();
+    });
+    add->setMenu(addMenu);
+    load();
+    dialog->show();
+}
+
 void StellarGallery::editInstance(const QString& id)
 {
     auto* instance = APPLICATION->instances()->getInstanceById(id);
     if (!instance)
         return;
     if (instance->isHorizon()) {
-        dismissPanel();
-        QVBoxLayout* shell;
-        auto* panel = galleryDialog(instance->name(), shell);
-        auto* body = new QHBoxLayout;
-        auto* controls = new QVBoxLayout;
-        auto* library = new QVBoxLayout;
-        auto* category = new QComboBox(panel);
-        category->setAccessibleName(tr("Content type"));
-        category->addItem(tr("Mods"));
-        category->addItem(tr("Resource packs"));
-        category->addItem(tr("Shader packs"));
-        library->addWidget(category);
-        auto* files = new QListWidget(panel);
-        files->setAccessibleName(tr("Installed content"));
-        files->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        library->addWidget(files, 1);
-        const auto root = QDir(instance->gameRoot());
-        const auto refresh = [category, files, root] {
-            files->clear();
-            const auto addFiles = [files, root](const QString& directory, const QStringList& filters) {
-                const QDir source(root.filePath(directory));
-                for (const auto& file : source.entryInfoList(filters, QDir::Files | QDir::NoSymLinks, QDir::Name)) {
-                    auto* item = new QListWidgetItem(file.completeBaseName(), files);
-                    item->setToolTip(file.fileName());
-                    item->setData(Qt::UserRole, file.absoluteFilePath());
-                }
-            };
-            switch (category->currentIndex()) {
-                case 0:
-                    addFiles("horizon-mods", {"*.hmod", "*.wasm"});
-                    addFiles("horizon-native-mods", {"*.hmod"});
-                    break;
-                case 1:
-                    addFiles("resourcepacks", {"*.zip"});
-                    break;
-                case 2:
-                    addFiles("shaderpacks", {"*.zip", "*.hshader"});
-                    break;
-            }
-        };
-        connect(category, &QComboBox::currentIndexChanged, panel, refresh);
-        refresh();
-        auto* project = new QLineEdit(panel);
-        project->setPlaceholderText(tr("Project link or slug"));
-        project->setAccessibleName(tr("Mod project"));
-        auto* status = new QLabel(panel);
-        status->setWordWrap(true);
-        status->setTextFormat(Qt::PlainText);
-        auto* browse = new GalleryButton(tr("Browse Mods & Packs"), panel);
-        auto* install = new GalleryButton(tr("Install Project"), panel);
-        auto* import = new GalleryButton(tr("Import Resource or Shader Pack"), panel);
-        auto* setup = new GalleryButton(tr("Rust Setup"), panel);
-        auto* folder = new GalleryButton(tr("Game Folder"), panel);
-        auto* wallpaper = new GalleryButton(tr("Wallpaper"), panel);
-        auto* search = new QHBoxLayout;
-        search->addWidget(project, 1);
-        search->addWidget(install);
-        controls->addLayout(search);
-        for (auto* button : {browse, import, setup, folder, wallpaper})
-            controls->addWidget(button);
-        controls->addStretch();
-        body->addLayout(library, 1);
-        body->addLayout(controls, 1);
-        shell->addLayout(body, 1);
-        shell->addWidget(status);
-        auto* process = new QProcess(this);
-        auto environment = QProcessEnvironment::systemEnvironment();
-        environment.insert("HORIZON_HOME", QDir(instance->gameRoot()).absolutePath());
-        process->setProcessEnvironment(environment);
-        process->setProcessChannelMode(QProcess::MergedChannels);
-        connect(panel, &QObject::destroyed, process, [process] {
-            if (process->state() == QProcess::NotRunning)
-                process->deleteLater();
-            else
-                connect(process, &QProcess::finished, process, &QObject::deleteLater);
-        });
-        const auto complete = [process, status, install, import, refresh](bool success) {
-            const auto detail = QString::fromUtf8(process->readAll()).trimmed().right(240);
-            status->setText(success ? QObject::tr("Content added.")
-                                    : detail.isEmpty() ? process->errorString() : detail);
-            install->setEnabled(true);
-            import->setEnabled(true);
-            if (success)
-                refresh();
-        };
-        connect(process, &QProcess::errorOccurred, panel, [complete](QProcess::ProcessError error) {
-            if (error == QProcess::FailedToStart)
-                complete(false);
-        });
-        connect(process, &QProcess::finished, panel, [complete](int code, QProcess::ExitStatus result) {
-            complete(code == 0 && result == QProcess::NormalExit);
-        });
-        const auto run = [process, status, install, import, current = QPointer(instance)](const QStringList& arguments) {
-            if (process->state() != QProcess::NotRunning)
-                return;
-            if (!current || current->isRunning()) {
-                status->setText(QObject::tr("Close Minecraft before changing its content."));
-                return;
-            }
-            const auto program = APPLICATION->horizonLauncher();
-            if (program.isEmpty()) {
-                status->setText(QObject::tr("This Stellar build doesn’t include the Rust content tools."));
-                return;
-            }
-            install->setEnabled(false);
-            import->setEnabled(false);
-            status->setText(QObject::tr("Adding content…"));
-            process->start(program, arguments);
-        };
-        connect(browse, &QPushButton::clicked, panel, [] {
-            QDesktopServices::openUrl(QUrl("https://playhorizon.dev/mods"));
-        });
-        connect(install, &QPushButton::clicked, panel, [project, status, run] {
-            auto slug = project->text().trimmed();
-            const QUrl url(slug);
-            if (url.scheme() == "https" && url.host() == "playhorizon.dev" && url.path().startsWith("/mods/"))
-                slug = url.path().mid(6).section('/', 0, 0);
-            if (slug.isEmpty() || slug.startsWith('-') || slug.contains(QRegularExpression("[^a-zA-Z0-9_-]"))) {
-                status->setText(QObject::tr("Enter a Project link or slug."));
-                return;
-            }
-            run({"mods", "install", "--source", "horizon", "--instance", "horizon", slug});
-        });
-        connect(project, &QLineEdit::returnPressed, install, &QPushButton::click);
-        connect(import, &QPushButton::clicked, panel, [panel, run] {
-            auto* picker = new QFileDialog(panel, QObject::tr("Import Pack"));
-            picker->setAttribute(Qt::WA_DeleteOnClose);
-            picker->setFileMode(QFileDialog::ExistingFile);
-            picker->setNameFilter(QObject::tr("Resource and shader packs (*.zip *.hshader)"));
-            QObject::connect(picker, &QFileDialog::fileSelected, panel, [run](const QString& path) {
-                run({"packs", "add", "--instance", "horizon", path});
-            });
-            picker->open();
-        });
-        connect(setup, &QPushButton::clicked, panel, [] { APPLICATION->openHorizonSetup(); });
-        connect(folder, &QPushButton::clicked, panel, [path = instance->gameRoot()] {
-            if (QDir().mkpath(path))
-                QDesktopServices::openUrl(QUrl::fromLocalFile(path));
-        });
-        connect(wallpaper, &QPushButton::clicked, panel, [this, panel, id] {
-            panel->close();
-            showWallpapers(id);
-        });
-        auto* indexer = new QProcess(panel);
-        indexer->setProcessEnvironment(environment);
-        auto projects = std::make_shared<QHash<QString, QString>>();
-        auto* packActions = new QHBoxLayout;
-        const auto available = [files, category, projects, process] {
-            if (const auto* item = files->currentItem(); item && process->state() == QProcess::NotRunning) {
-                return category->currentIndex() != 0 ||
-                       projects->contains(QFileInfo(item->data(Qt::UserRole).toString()).fileName());
-            }
-            return false;
-        };
-        connect(indexer, &QProcess::finished, panel, [indexer, projects, files](int code, QProcess::ExitStatus state) {
-            if (code != 0 || state != QProcess::NormalExit)
-                return;
-            const auto entries = QJsonDocument::fromJson(indexer->readAllStandardOutput()).array();
-            projects->clear();
-            for (const auto& value : entries) {
-                const auto entry = value.toObject();
-                const auto file = QFileInfo(entry["file"].toString()).fileName();
-                const auto project = entry["project"].toString();
-                if (!file.isEmpty() && !project.isEmpty() && !project.startsWith('-'))
-                    projects->insert(file, project);
-            }
-            if (const int row = files->currentRow(); row >= 0) {
-                files->setCurrentRow(-1);
-                files->setCurrentRow(row);
-            }
-        });
-        const auto indexProjects = [indexer] {
-            const auto program = APPLICATION->horizonLauncher();
-            if (!program.isEmpty() && indexer->state() == QProcess::NotRunning)
-                indexer->start(program, {"mods", "list", "--json", "--instance", "horizon"});
-        };
-        indexProjects();
-        connect(process, &QProcess::finished, panel, indexProjects);
-        for (const auto& [label, command] : QList<QPair<QString, QString>>{
-                 {tr("Enable"), "on"}, {tr("Disable"), "off"}, {tr("Trash"), "remove"}}) {
-            auto* button = new GalleryButton(label, panel);
-            button->setEnabled(false);
-            const auto validate = [button, available] { button->setEnabled(available()); };
-            connect(files, &QListWidget::currentItemChanged, button, validate);
-            connect(process, &QProcess::stateChanged, button, validate);
-            connect(button, &QPushButton::clicked, panel, [panel, files, category, command, run, available, projects] {
-                if (!available())
-                    return;
-                const auto file = QFileInfo(files->currentItem()->data(Qt::UserRole).toString()).fileName();
-                if (command == "remove" && QMessageBox::question(panel, tr("Remove Content"), file) != QMessageBox::Yes)
-                    return;
-                if (category->currentIndex() == 0) {
-                    const QString operation = command == "on" ? "enable" : command == "off" ? "disable" : "remove";
-                    run({"mods", operation, "--instance", "horizon", projects->value(file)});
-                } else {
-                    run({"packs", command, "--instance", "horizon", "--kind", category->currentIndex() == 1 ? "resource" : "shader", file});
-                }
-            });
-            packActions->addWidget(button);
-        }
-        library->addLayout(packActions);
-        panel->show();
+        editRustInstance(instance);
         return;
     }
     auto* editor = APPLICATION->showInstanceWindow(instance, "version", window());

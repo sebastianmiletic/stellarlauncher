@@ -66,6 +66,7 @@ private:
     void launchChecked(const QString& id);
     void refreshInstance();
     void editInstance(const QString& id);
+    void editRustInstance(MinecraftInstance* instance);
     void trashInstance(const QString& id);
     void showActions(int index, QRect anchor = {});
     void showPreferences();

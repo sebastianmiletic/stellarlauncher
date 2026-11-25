@@ -62,7 +62,7 @@ QString ArchiveReader::File::filename()
     return decodeLibArchivePath(m_entry, archive_entry_pathname_utf8, archive_entry_pathname);
 }
 
-Result<QByteArray> ArchiveReader::File::readAll()
+Result<QByteArray> ArchiveReader::File::readAll(qsizetype maxBytes)
 {
     QByteArray data;
     const void* buff = nullptr;
@@ -71,6 +71,8 @@ Result<QByteArray> ArchiveReader::File::readAll()
 
     int status = 0;
     while ((status = archive_read_data_block(m_archive.get(), &buff, &size, &offset)) == ARCHIVE_OK) {
+        if (maxBytes >= 0 && size > static_cast<size_t>(maxBytes - data.size()))
+            return std::unexpected{ QStringLiteral("Archive entry is too large") };
         data.append(static_cast<const char*>(buff), static_cast<qsizetype>(size));
     }
     if (status != ARCHIVE_EOF && status != ARCHIVE_OK) {
@@ -114,9 +116,9 @@ auto ArchiveReader::goToFile(const QString& filename) -> Result<std::unique_ptr<
     return std::unexpected{ "File not found" };
 }
 
-Result<QByteArray> ArchiveReader::readFile(const QString& fileName)
+Result<QByteArray> ArchiveReader::readFile(const QString& fileName, qsizetype maxBytes)
 {
-    return goToFile(fileName).and_then([](const auto& v) -> Result<QByteArray> { return v->readAll(); });
+    return goToFile(fileName).and_then([maxBytes](const auto& v) -> Result<QByteArray> { return v->readAll(maxBytes); });
 }
 
 static int copy_data(struct archive* ar, struct archive* aw, bool notBlock = false)

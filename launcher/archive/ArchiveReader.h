@@ -56,7 +56,7 @@ class ArchiveReader {
         QDateTime dateTime();
         const char* error();
 
-        Result<QByteArray> readAll();
+        Result<QByteArray> readAll(qsizetype maxBytes = -1);
         Result<> skip();
         Result<> writeFile(archive* out, const QString& targetFileName = "", bool notBlock = false);
         Result<> writeFile(archive* out, const QString& targetFileName, std::optional<QDir> root, bool notBlock = false);
@@ -71,7 +71,7 @@ class ArchiveReader {
     };
 
     Result<std::unique_ptr<File>> goToFile(const QString& filename);
-    Result<QByteArray> readFile(const QString& fileName);
+    Result<QByteArray> readFile(const QString& fileName, qsizetype maxBytes = -1);
     Result<> parse(const std::function<Result<>(File*)>&);
     Result<> parse(const std::function<Result<bool>(File*)>&);
 
